@@ -1,50 +1,39 @@
-version: "3.9"
-
 services:
   frontend:
     build: ./frontend
     ports:
-      - "5173:5173"     # browser -> container (Vite)
+      - "5173:5173"
+    environment:
+      # μέσα στα containers το backend λέγεται "backend"
+      - VITE_API_URL=http://backend:3000
     depends_on:
       - backend
-    environment:
-      - VITE_API_URL=http://localhost:3000  # ή http://backend:3000 αν το ζητήσετε από backend
 
   backend:
     build: ./backend
     ports:
       - "3000:3000"
     depends_on:
-      - db
+      - mongo
     environment:
-      - DB_HOST=db
-      - DB_PORT=5432
-      - DB_USER=postgres
-      - DB_PASSWORD=postgres
-      - DB_NAME=courses
+      - PORT=3000
+      - MONGO_URI=mongodb://mongo:27017/courses_db
 
-  db:
-    image: postgres:16
+  mongo:
+    image: mongo:7
     restart: always
-    environment:
-      - POSTGRES_DB=courses
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
     ports:
-      - "5432:5432"
+      - "27017:27017"
     volumes:
-      - db_data:/var/lib/postgresql/data
+      - mongo_data:/data/db
 
   spark:
     build: ./pyspark
     depends_on:
-      - db
+      - mongo
     environment:
-      - DB_HOST=db
-      - DB_PORT=5432
-      - DB_USER=postgres
-      - DB_PASSWORD=postgres
-      - DB_NAME=courses
+      # placeholder για αργότερα, όταν θα συνδέσουμε Spark με Mongo
+      - MONGO_URI=mongodb://mongo:27017/courses_db
 
 volumes:
-  db_data:
+  mongo_data:
