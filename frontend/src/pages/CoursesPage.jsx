@@ -10,6 +10,12 @@ function CoursesPage() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
 
+  const [language, setLanguage] = useState("");
+  const [level, setLevel] = useState("");
+  const [source, setSource] = useState("");
+  const [keyword, getKeyword] = useState("");
+
+  //νέα δεδομένα
   useEffect(() => {
     const fetchCourses = async () => {
       setLoading(true);
@@ -17,14 +23,31 @@ function CoursesPage() {
 
       try {
         const params = {};
+
         if (search.trim()) {
           params.search = search.trim();
         }
 
+        if (language) {
+            params.language = language;
+        }
+
+        if (level) {
+            params.level = level;
+        }
+
+        if (source) {
+            params.source = source;
+        }
+
+        if (keyword) {
+            params.keyword = keyword;
+        }
+        //φέρε δεδομένα για το συγεκριμένο id μέσω get request
         const response = await axios.get(`${API_BASE_URL}/courses`, {
           params,
         });
-
+        //φορρτώνει τα δεδομένα που ήρθαν
         setCourses(response.data || []);
       } catch (err) {
         console.error(err);
@@ -35,7 +58,7 @@ function CoursesPage() {
     };
 
     fetchCourses();
-  }, [search]);
+  }, [search, language, level, source, keyword]); //για να δουλεύει η αναζήτηση 
 
   return (
     <div>
@@ -50,6 +73,58 @@ function CoursesPage() {
           style={{ padding: "0.5rem", width: "100%", maxWidth: "400px" }}
         />
       </div>
+   
+    <div
+      style={{
+        display: "flex",
+        flexWrap: "wrap",
+        gap: "0.75rem",
+        marginBottom: "1.5rem",
+      }}
+    >
+     {/* Γλώσσα */}
+      <select
+        value={language}
+        onChange={(e) => setLanguage(e.target.value)}
+        style={{ padding: "0.5rem" }}
+      >
+        <option value="">All languages</option>
+        <option value="en">English</option>
+        <option value="el">Greek</option>
+      </select>
+
+      {/* Επίπεδο */}
+      <select
+        value={level}
+        onChange={(e) => setLevel(e.target.value)}
+        style={{ padding: "0.5rem" }}
+      >
+        <option value="">All levels</option>
+        <option value="beginner">Beginner</option>
+        <option value="intermediate">Intermediate</option>
+        <option value="advanced">Advanced</option>
+      </select>
+
+      {/* Πηγή */}
+      <select
+        value={source}
+        onChange={(e) => setSource(e.target.value)}
+        style={{ padding: "0.5rem" }}
+      >
+        <option value="">All repositories</option>
+        <option value="kaggle">Kaggle</option>
+        <option value="coursera">Coursera</option>
+      </select>
+
+      {/* Λέξεις-κελιδιά */}
+      <input
+        type="text"
+        placeholder="Keyword / subject..." 
+        value={keyword}
+        onChange={(e) => setKeyword(e.target.value)}
+        style={{ padding: "0.5rem" }}
+      />
+    </div>
 
       {loading && <p>Loading courses...</p>}
       {error && <p style={{ color: "red" }}>{error}</p>}
@@ -77,10 +152,12 @@ function CoursesPage() {
                 <p style={{ marginBottom: "0.5rem" }}>{course.description}</p>
               )}
 
-              <p style={{ marginBottom: "0.5rem" }}>
-                <strong>Language:</strong> {course.language}{" "}
-                | <strong>Level:</strong> {course.level}
-              </p>
+               <p style={{ fontSize: "0.9rem", marginBottom: "0.5rem" }}>
+                  <strong>Language:</strong> {course.language || "N/A"}{" "}
+      |           <strong>Level:</strong> {course.level || "N/A"}{" "}
+      |           <strong>Source:</strong>{" "}
+                 {course.source?.name || course.source || "Unknown"}
+               </p>
 
               <Link to={`/courses/${course._id || course.id}`}>
                 View details

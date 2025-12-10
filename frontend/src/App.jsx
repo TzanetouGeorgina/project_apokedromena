@@ -6,10 +6,10 @@ import "./App.css";
 
 function App() {
   return (
-    <Router>
+    <Router>  
       <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "1rem" }}>
         <header style={{ marginBottom: "1.5rem" }}>
-          <h1>Open Courses Aggregator</h1>
+          <h1>Open courses Aggregator</h1>
           <nav style={{ display: "flex", gap: "1rem" }}>
             <Link to="/">Courses</Link>
           </nav>
