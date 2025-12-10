@@ -27,6 +27,7 @@ services:
     volumes:
       - mongo_data:/data/db
 
+
   spark:
     build: ./pyspark
     depends_on:
