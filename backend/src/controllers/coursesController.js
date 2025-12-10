@@ -1,6 +1,37 @@
 import mongoose from "mongoose";
 import Course from "../models/Course.js";
 
+// Helper: μετατρέπει null/undefined/κενό string σε "unknown"
+function toUnknown(value) {
+  if (value === undefined || value === null) return "unknown";
+  if (typeof value === "string" && value.trim() === "") return "unknown";
+  return value;
+}
+
+// Μορφοποίηση course πριν το στείλουμε στο frontend
+function formatCourse(courseDoc) {
+  const course = courseDoc.toObject ? courseDoc.toObject() : courseDoc;
+
+  return {
+    id: course._id,
+    title: toUnknown(course.title),
+    shortDescription: toUnknown(course.shortDescription),
+    keywords: course.keywords ?? [],
+    language: toUnknown(course.language),
+    level: toUnknown(course.level),
+    source: {
+      name: toUnknown(course.source?.name),
+      url: toUnknown(course.source?.url),
+    },
+    accessLink: toUnknown(course.accessLink),
+    lastUpdated: course.lastUpdated
+      ? course.lastUpdated.toISOString()
+      : "unknown",
+    // αν θες, μπορείς να επιστρέφεις κι άλλα πεδία (price, rating, κτλ)
+  };
+}
+
+//   GET /courses//   με search, filters & pagination
 export async function getCourses(req, res) {
   try {
     const {
@@ -10,7 +41,7 @@ export async function getCourses(req, res) {
       source,
       category,
       page = 1,
-      limit = 20
+      limit = 20,
     } = req.query;
 
     const filters = {};
@@ -27,19 +58,27 @@ export async function getCourses(req, res) {
       filters["source.name"] = source;
     }
 
+    // Στο schema μας δεν έχουμε "categories" αλλά keywords[]
     if (category) {
-      filters.categories = category;
+      filters.keywords = category;
     }
 
     let query;
+    let countFilter;
+
     if (q) {
-      // text search αν υπάρχει index
+      // text search (χρησιμοποιεί το text index από το schema)
+      const textCriteria = { $text: { $search: q }, ...filters };
+
       query = Course.find(
-        { $text: { $search: q }, ...filters },
+        textCriteria,
         { score: { $meta: "textScore" } }
       ).sort({ score: { $meta: "textScore" } });
+
+      countFilter = textCriteria;
     } else {
       query = Course.find(filters).sort({ createdAt: -1 });
+      countFilter = filters;
     }
 
     const pageNumber = Number(page) || 1;
@@ -48,22 +87,24 @@ export async function getCourses(req, res) {
 
     const [data, total] = await Promise.all([
       query.skip(skip).limit(pageSize),
-      Course.countDocuments(filters)
+      Course.countDocuments(countFilter),
     ]);
 
     res.json({
-      data,
+      data: data.map(formatCourse),
       pagination: {
         page: pageNumber,
         pageSize,
-        total
-      }
+        total,
+      },
     });
   } catch (err) {
     console.error("getCourses error:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 }
+
+//   GET /courses/:id
 
 export async function getCourseById(req, res) {
   try {
@@ -79,18 +120,19 @@ export async function getCourseById(req, res) {
       return res.status(404).json({ error: "Course not found" });
     }
 
-    res.json(course);
+    res.json(formatCourse(course));
   } catch (err) {
     console.error("getCourseById error:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 }
 
-// Προαιρετικό: για να δημιουργείς χειροκίνητα courses με Postman
+//   POST /courses//   για χειροκίνητη δημιουργία με Postman)
+
 export async function createCourse(req, res) {
   try {
     const course = await Course.create(req.body);
-    res.status(201).json(course);
+    res.status(201).json(formatCourse(course));
   } catch (err) {
     console.error("createCourse error:", err);
     res.status(400).json({ error: err.message });
