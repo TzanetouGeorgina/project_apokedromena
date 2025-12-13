@@ -1,176 +1,222 @@
 // backend/scripts/importCoursera.js
 import fs from "fs";
 import path from "path";
+import readline from "readline";
 import { fileURLToPath } from "url";
-import csv from "csv-parser";
 
 import "dotenv/config";
-import mongoose from "mongoose";
 import { connectDB } from "../src/config/db.js";
 import Course from "../src/models/Course.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// βοηθός: string ή fallback
-function toStringOrUnknown(v, fallback = "unknown") {
-  if (v === undefined || v === null) return fallback;
-  const s = String(v).trim();
-  return s === "" ? fallback : s;
-}
+// Μόνο αυτά θεωρούμε valid "language" από Coursera dataset
+const LANGUAGE_WHITELIST = new Set([
+  "English",
+  "Spanish",
+  "French",
+  "German",
+  "Italian",
+  "Portuguese",
+  "Portuguese (Brazilian)",
+  "Chinese",
+  "Japanese",
+  "Korean",
+  "Arabic",
+  "Russian",
+  "Hindi",
+  "Turkish",
+  "Dutch",
+  "Ukrainian",
+  "Polish",
+  "Swedish",
+  "Norwegian",
+  "Danish",
+  "Greek",
+  "Hebrew",
+  "Thai",
+  "Vietnamese",
+  "Indonesian",
+]);
 
-// helper: παίρνουμε την τιμή του ΜΟΝΑΔΙΚΟΥ πεδίου που έχει το row
-function getRawLine(row) {
-  const values = Object.values(row);
-  if (!values.length) return "";
-  return String(values[0] ?? "");
-}
+const LEVEL_WHITELIST = new Set([
+  "Beginner Level",
+  "Intermediate Level",
+  "Advanced Level",
+  "Mixed",
+  "All Levels",
+]);
 
-// helper: κόβουμε τη γραμμή σε μέρη
-function parseCourseraLine(rawLine) {
-  // βγάζουμε εξωτερικά quotes αν υπάρχουν
-  let cleaned = rawLine.trim();
-  cleaned = cleaned.replace(/^"+|"+$/g, "");
+function parseCsvLine(line) {
+  const out = [];
+  let cur = "";
+  let inQuotes = false;
 
-  // χωρίζουμε με κόμμα. Ναι, θα “σπάσουν” μερικές περιγραφές,
-  // αλλά για την εργασία μάς νοιάζουν κυρίως τα πρώτα πεδία.
-  const parts = cleaned.split(",");
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
 
-  // προσοχή στα index:
-  // 0: url
-  // 1: title
-  // 2: university / company
-  // 3: type (course / specialization / professional certificate)
-  // 4: image url
-  // 5: category-subject-area
-  // 6: certificate-is-available
-  // 7: description (μερικές φορές)
-  // ...
-  // 10: language
-  // 11: level
-  // ...
-  // τελευταίο περίπου: timestamp + ;;;;;;;;
-
-  const url = parts[0] || "";
-  const title = parts[1] || "";
-  const university = parts[2] || "";
-  const category = parts[5] || "";
-  const language = parts[10] || "en";
-  const level = parts[11] || "unknown";
-
-  // περιγραφή: παίρνουμε είτε το 7 είτε το 14 (syllabus), αν υπάρχει
-  const descriptionCandidate = parts[7] || parts[14] || "";
-
-  // timestamp: παίρνουμε το τελευταίο non-empty κομμάτι
-  let timestamp = "";
-  for (let i = parts.length - 1; i >= 0; i -= 1) {
-    const p = (parts[i] || "").trim();
-    if (p) {
-      timestamp = p;
-      break;
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        cur += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (ch === "," && !inQuotes) {
+      out.push(cur);
+      cur = "";
+    } else {
+      cur += ch;
     }
   }
-
-  return { url, title, university, category, language, level, descriptionCandidate, timestamp };
+  out.push(cur);
+  return out;
 }
 
-// helper: parse date ή null (κόβουμε τα ;) 
-function parseDateFromPart(value) {
-  if (!value) return null;
-  const cleaned = String(value).split(";")[0].replace(/"/g, "").trim();
+function fixMalformedLeadingQuote(line) {
+  if (!line.startsWith('"')) return line;
+
+  const firstComma = line.indexOf(",");
+  const nextQuote = line.indexOf('"', 1);
+
+  if (firstComma !== -1 && nextQuote !== -1 && firstComma < nextQuote) {
+    return line.slice(1);
+  }
+  return line;
+}
+
+function cleanText(v, fallback = "unknown") {
+  if (v === undefined || v === null) return fallback;
+  const s = String(v).trim();
+  if (!s || s === "-") return fallback;
+  return s;
+}
+
+function parseLastUpdated(tsRaw) {
+  if (!tsRaw) return null;
+  const cleaned = String(tsRaw).split(";")[0].replace(/"/g, "").trim();
   if (!cleaned) return null;
   const d = new Date(cleaned);
-  if (Number.isNaN(d.getTime())) return null;
-  return d;
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function normalizeLanguageStrict(v) {
+  const s = cleanText(v, "unknown");
+  if (s === "unknown") return "unknown";
+  // ΜΟΝΟ whitelist
+  return LANGUAGE_WHITELIST.has(s) ? s : "unknown";
+}
+
+function normalizeLevelStrict(v) {
+  const s = cleanText(v, "unknown");
+  if (s === "unknown") return "unknown";
+  return LEVEL_WHITELIST.has(s) ? s : "unknown";
+}
+
+// Αν σε κάποιες γραμμές τα (language, level) μετακινούνται 1-2 θέσεις,
+// ψάχνουμε ΜΟΝΟ σε ένα μικρό “παράθυρο” γύρω από τα indexes.
+function findInWindow(fields, start, end, whitelist) {
+  for (let i = start; i <= end && i < fields.length; i++) {
+    const val = cleanText(fields[i], "unknown");
+    if (whitelist.has(val)) return val;
+  }
+  return "unknown";
 }
 
 async function importCoursera() {
   await connectDB();
 
-  console.log("✅ Connected to MongoDB");
-  console.log("📌 Connected to DB:", mongoose.connection.db.databaseName);
-  console.log("📌 Using collection:", Course.collection.collectionName);
-
   const filePath = path.join(__dirname, "..", "data", "coursera.csv");
   console.log("📥 Reading Coursera CSV from:", filePath);
 
-  const rows = [];
+  console.log("🧹 Deleting old Coursera CSV records...");
+  await Course.deleteMany({ "source.name": "Coursera CSV" });
 
-  return new Promise((resolve, reject) => {
-    fs.createReadStream(filePath)
-      .pipe(csv()) // θα μας δώσει ένα object ανά γραμμή, με 1 μόνο πεδίο
-      .on("data", (row) => {
-        rows.push(row);
-      })
-      .on("end", async () => {
-        try {
-          console.log(`📦 Read ${rows.length} Coursera rows, mapping...`);
-
-          if (!rows.length) {
-            console.log("⚠ No rows found in Coursera CSV");
-            return resolve();
-          }
-
-          const docs = rows.map((row) => {
-            const rawLine = getRawLine(row);
-            const {
-              url,
-              title,
-              university,
-              category,
-              language,
-              level,
-              descriptionCandidate,
-              timestamp,
-            } = parseCourseraLine(rawLine);
-
-            const keywords = [university, category].filter(Boolean);
-
-            return {
-              title: toStringOrUnknown(title, "Untitled course"),
-              shortDescription: toStringOrUnknown(
-                descriptionCandidate,
-                "No description"
-              ),
-              keywords,
-              language: toStringOrUnknown(language, "unknown"),
-              level: toStringOrUnknown(level, "unknown"),
-              source: {
-                name: "Coursera CSV",
-                url: "https://www.coursera.org",
-              },
-              accessLink: toStringOrUnknown(url, "https://www.coursera.org"),
-              lastUpdated: parseDateFromPart(timestamp),
-            };
-          });
-
-          console.log("🧹 Deleting old Coursera CSV data from collection...");
-          await Course.deleteMany({ "source.name": "Coursera CSV" });
-
-          console.log("💾 Inserting mapped documents...");
-          const inserted = await Course.insertMany(docs, { ordered: true });
-
-          console.log("✅ Coursera import finished!");
-          console.log("📊 Actually inserted docs:", inserted.length);
-
-          resolve();
-        } catch (err) {
-          console.error("❌ Coursera import error:", err);
-          reject(err);
-        }
-      })
-      .on("error", (err) => {
-        console.error("❌ Error reading Coursera CSV:", err);
-        reject(err);
-      });
+  const rl = readline.createInterface({
+    input: fs.createReadStream(filePath, { encoding: "utf-8" }),
+    crlfDelay: Infinity,
   });
+
+  let inserted = 0;
+  const batch = [];
+  const BATCH_SIZE = 1000;
+
+  for await (const line of rl) {
+    const raw = line.trim();
+    if (!raw) continue;
+
+    const normalized = raw.replace(/^\uFEFF/, "");
+    const fixed = fixMalformedLeadingQuote(normalized);
+
+    const fields = parseCsvLine(fixed);
+    if (fields.length < 12) continue;
+
+    // Αναμενόμενη δομή:
+    // 0 url
+    // 1 title
+    // 2 org
+    // 3 type
+    // 4 image
+    // 5 category
+    // 6 certificate
+    // 7 description
+    // 8 duration
+    // 9 language
+    // 10 level
+    // last = timestamp (με ;;;;;)
+    const url = cleanText(fields[0], "");
+    const title = cleanText(fields[1], "Untitled course");
+    const org = cleanText(fields[2], "");
+    const category = cleanText(fields[5], "");
+
+    const description = cleanText(fields[7], "No description");
+
+    // Strict: πρώτα δοκιμάζουμε τα “σωστά” indexes
+    let language = normalizeLanguageStrict(fields[9]);
+    let level = normalizeLevelStrict(fields[10]);
+
+    // Window fallback (ΜΟΝΟ κοντά, όχι σε όλη τη γραμμή)
+    if (language === "unknown") {
+      language = findInWindow(fields, 8, 12, LANGUAGE_WHITELIST);
+    }
+    if (level === "unknown") {
+      level = findInWindow(fields, 8, 14, LEVEL_WHITELIST);
+    }
+
+    const lastUpdated = parseLastUpdated(fields[fields.length - 1]);
+
+    const keywords = [org, category].filter((x) => x && x !== "unknown" && x !== "-");
+
+    batch.push({
+      title,
+      shortDescription: description,
+      keywords,
+      language,
+      level,
+      source: { name: "Coursera CSV", url: "https://www.coursera.org" },
+      accessLink: url || "https://www.coursera.org",
+      lastUpdated,
+    });
+
+    if (batch.length >= BATCH_SIZE) {
+      await Course.insertMany(batch, { ordered: false });
+      inserted += batch.length;
+      batch.length = 0;
+    }
+  }
+
+  if (batch.length) {
+    await Course.insertMany(batch, { ordered: false });
+    inserted += batch.length;
+  }
+
+  console.log("✅ Coursera import finished. Inserted:", inserted);
 }
 
 importCoursera()
-  .then(() => {
-    console.log("Done.");
-    process.exit(0);
-  })
-  .catch(() => {
+  .then(() => process.exit(0))
+  .catch((err) => {
+    console.error("❌ Import failed:", err);
     process.exit(1);
   });
