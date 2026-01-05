@@ -1,16 +1,15 @@
+// src/controllers/coursesController.js
 import mongoose from "mongoose";
 import Course from "../models/Course.js";
 
-// Helper: μετατρέπει null/undefined/κενό string σε "unknown"
 function toUnknown(value) {
   if (value === undefined || value === null) return "unknown";
   if (typeof value === "string" && value.trim() === "") return "unknown";
   return value;
 }
 
-// Μορφοποίηση course πριν το στείλουμε στο frontend
 function formatCourse(courseDoc) {
-  const course = courseDoc.toObject ? courseDoc.toObject() : courseDoc;
+  const course = courseDoc?.toObject ? courseDoc.toObject() : courseDoc;
 
   return {
     id: course._id,
@@ -24,18 +23,15 @@ function formatCourse(courseDoc) {
       url: toUnknown(course.source?.url),
     },
     accessLink: toUnknown(course.accessLink),
-    lastUpdated: course.lastUpdated
-      ? course.lastUpdated.toISOString()
-      : "unknown",
-    // αν θες, μπορείς να επιστρέφεις κι άλλα πεδία (price, rating, κτλ)
+    lastUpdated: course.lastUpdated ? new Date(course.lastUpdated).toISOString() : "unknown",
   };
 }
 
-//   GET /courses//   με search, filters & pagination
+// GET /courses  (search, filters, pagination)
 export async function getCourses(req, res) {
   try {
     const {
-      q,            // search text
+      q,
       language,
       level,
       source,
@@ -45,50 +41,45 @@ export async function getCourses(req, res) {
     } = req.query;
 
     const filters = {};
+    if (language) filters.language = language;
+    if (level) filters.level = level;
+    if (source) filters["source.name"] = source;
+    if (category) filters.keywords = { $in: [category] };
 
-    if (language) {
-      filters.language = language;
-    }
+    const pageNumber = Math.max(1, Number(page) || 1);
+    const pageSize = Math.min(100, Math.max(1, Number(limit) || 20));
+    const skip = (pageNumber - 1) * pageSize;
 
-    if (level) {
-      filters.level = level;
-    }
+    const search = (q || "").trim();
 
-    if (source) {
-      filters["source.name"] = source;
-    }
-
-    // Στο schema μας δεν έχουμε "categories" αλλά keywords[]
-    if (category) {
-      filters.keywords = category;
-    }
-
-    let query;
+    let findQuery;
     let countFilter;
 
-    if (q) {
-      // text search (χρησιμοποιεί το text index από το schema)
-      const textCriteria = { $text: { $search: q }, ...filters };
-
-      query = Course.find(
-        textCriteria,
-        { score: { $meta: "textScore" } }
-      ).sort({ score: { $meta: "textScore" } });
+    if (search.length >= 2) {
+      const textCriteria = { $text: { $search: search }, ...filters };
+      findQuery = Course.find(textCriteria, { score: { $meta: "textScore" } })
+        .sort({ score: { $meta: "textScore" } })
+        .skip(skip)
+        .limit(pageSize)
+        .lean();
 
       countFilter = textCriteria;
     } else {
-      query = Course.find(filters).sort({ createdAt: -1 });
+      findQuery = Course.find(filters)
+        .sort({ lastUpdated: -1, _id: -1 })
+        .skip(skip)
+        .limit(pageSize)
+        .lean();
+
       countFilter = filters;
     }
 
-    const pageNumber = Number(page) || 1;
-    const pageSize = Number(limit) || 20;
-    const skip = (pageNumber - 1) * pageSize;
-
     const [data, total] = await Promise.all([
-      query.skip(skip).limit(pageSize),
+      findQuery,
       Course.countDocuments(countFilter),
     ]);
+
+    const pages = Math.ceil(total / pageSize);
 
     res.json({
       data: data.map(formatCourse),
@@ -96,6 +87,9 @@ export async function getCourses(req, res) {
         page: pageNumber,
         pageSize,
         total,
+        pages,
+        hasPrev: pageNumber > 1,
+        hasNext: pageNumber < pages,
       },
     });
   } catch (err) {
@@ -104,8 +98,7 @@ export async function getCourses(req, res) {
   }
 }
 
-//   GET /courses/:id
-
+// GET /courses/:id
 export async function getCourseById(req, res) {
   try {
     const { id } = req.params;
@@ -114,11 +107,8 @@ export async function getCourseById(req, res) {
       return res.status(400).json({ error: "Invalid course id" });
     }
 
-    const course = await Course.findById(id);
-
-    if (!course) {
-      return res.status(404).json({ error: "Course not found" });
-    }
+    const course = await Course.findById(id).lean();
+    if (!course) return res.status(404).json({ error: "Course not found" });
 
     res.json(formatCourse(course));
   } catch (err) {
@@ -127,8 +117,7 @@ export async function getCourseById(req, res) {
   }
 }
 
-//   POST /courses//   για χειροκίνητη δημιουργία με Postman)
-
+// POST /courses (dev)
 export async function createCourse(req, res) {
   try {
     const course = await Course.create(req.body);

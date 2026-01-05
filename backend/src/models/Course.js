@@ -3,7 +3,6 @@ import mongoose from "mongoose";
 
 const { Schema } = mongoose;
 
-// Βοηθητικός τύπος για υποχρεωτικά text fields με default "unknown"
 const REQUIRED_TEXT = {
   type: String,
   required: true,
@@ -13,37 +12,44 @@ const REQUIRED_TEXT = {
 
 const CourseSchema = new Schema(
   {
-    title: REQUIRED_TEXT,              // Τίτλος
-    shortDescription: REQUIRED_TEXT,   // Σύντομη περιγραφή
+    title: REQUIRED_TEXT,
+    shortDescription: REQUIRED_TEXT,
 
-    keywords: {
-      type: [String],
-      default: [],
-    },
+    keywords: { type: [String], default: [] },
 
-    language: REQUIRED_TEXT,           // Γλώσσα
-    level: REQUIRED_TEXT,              // beginner / intermediate / advanced / unknown
+    language: REQUIRED_TEXT,
+    level: REQUIRED_TEXT,
 
     source: {
-      name: REQUIRED_TEXT,             // π.χ. "Udemy", "Coursera"
-      url: REQUIRED_TEXT,              // URL του μαθήματος στην αρχική πλατφόρμα
+      name: REQUIRED_TEXT,
+      url: REQUIRED_TEXT,
     },
 
-    accessLink: REQUIRED_TEXT,         // Link εγγραφής/πρόσβασης
+    accessLink: REQUIRED_TEXT,
 
-    lastUpdated: {
-      type: Date,
-      default: null,
-    },
-      
+    // χρήσιμο για future delta sync / debugging
+    externalId: { type: String, default: "" },
+
+    lastUpdated: { type: Date, default: null },
   },
-  {
-    timestamps: true, // createdAt, updatedAt
-  }
+  { timestamps: true }
 );
 
+// Text search για /courses?q=
+CourseSchema.index({
+  title: "text",
+  shortDescription: "text",
+  keywords: "text",
+});
 
+// Dedup per source
+CourseSchema.index({ "source.name": 1, accessLink: 1 }, { unique: true });
 
+// Performance indexes για φίλτρα/sort
+CourseSchema.index({ language: 1 });
+CourseSchema.index({ level: 1 });
+CourseSchema.index({ "source.name": 1 });
+CourseSchema.index({ lastUpdated: -1 });
 
 const Course = mongoose.model("Course", CourseSchema);
 export default Course;

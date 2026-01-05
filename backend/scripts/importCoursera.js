@@ -11,41 +11,14 @@ import Course from "../src/models/Course.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Μόνο αυτά θεωρούμε valid "language" από Coursera dataset
 const LANGUAGE_WHITELIST = new Set([
-  "English",
-  "Spanish",
-  "French",
-  "German",
-  "Italian",
-  "Portuguese",
-  "Portuguese (Brazilian)",
-  "Chinese",
-  "Japanese",
-  "Korean",
-  "Arabic",
-  "Russian",
-  "Hindi",
-  "Turkish",
-  "Dutch",
-  "Ukrainian",
-  "Polish",
-  "Swedish",
-  "Norwegian",
-  "Danish",
-  "Greek",
-  "Hebrew",
-  "Thai",
-  "Vietnamese",
-  "Indonesian",
+  "English","Spanish","French","German","Italian","Portuguese","Portuguese (Brazilian)",
+  "Chinese","Japanese","Korean","Arabic","Russian","Hindi","Turkish","Dutch","Ukrainian",
+  "Polish","Swedish","Norwegian","Danish","Greek","Hebrew","Thai","Vietnamese","Indonesian",
 ]);
 
 const LEVEL_WHITELIST = new Set([
-  "Beginner Level",
-  "Intermediate Level",
-  "Advanced Level",
-  "Mixed",
-  "All Levels",
+  "Beginner Level","Intermediate Level","Advanced Level","Mixed","All Levels",
 ]);
 
 function parseCsvLine(line) {
@@ -55,17 +28,14 @@ function parseCsvLine(line) {
 
   for (let i = 0; i < line.length; i++) {
     const ch = line[i];
-
     if (ch === '"') {
       if (inQuotes && line[i + 1] === '"') {
-        cur += '"';
-        i++;
+        cur += '"'; i++;
       } else {
         inQuotes = !inQuotes;
       }
     } else if (ch === "," && !inQuotes) {
-      out.push(cur);
-      cur = "";
+      out.push(cur); cur = "";
     } else {
       cur += ch;
     }
@@ -76,13 +46,9 @@ function parseCsvLine(line) {
 
 function fixMalformedLeadingQuote(line) {
   if (!line.startsWith('"')) return line;
-
   const firstComma = line.indexOf(",");
   const nextQuote = line.indexOf('"', 1);
-
-  if (firstComma !== -1 && nextQuote !== -1 && firstComma < nextQuote) {
-    return line.slice(1);
-  }
+  if (firstComma !== -1 && nextQuote !== -1 && firstComma < nextQuote) return line.slice(1);
   return line;
 }
 
@@ -104,7 +70,6 @@ function parseLastUpdated(tsRaw) {
 function normalizeLanguageStrict(v) {
   const s = cleanText(v, "unknown");
   if (s === "unknown") return "unknown";
-  // ΜΟΝΟ whitelist
   return LANGUAGE_WHITELIST.has(s) ? s : "unknown";
 }
 
@@ -114,8 +79,6 @@ function normalizeLevelStrict(v) {
   return LEVEL_WHITELIST.has(s) ? s : "unknown";
 }
 
-// Αν σε κάποιες γραμμές τα (language, level) μετακινούνται 1-2 θέσεις,
-// ψάχνουμε ΜΟΝΟ σε ένα μικρό “παράθυρο” γύρω από τα indexes.
 function findInWindow(fields, start, end, whitelist) {
   for (let i = start; i <= end && i < fields.length; i++) {
     const val = cleanText(fields[i], "unknown");
@@ -130,88 +93,89 @@ async function importCoursera() {
   const filePath = path.join(__dirname, "..", "data", "coursera.csv");
   console.log("📥 Reading Coursera CSV from:", filePath);
 
-  console.log("🧹 Deleting old Coursera CSV records...");
-  await Course.deleteMany({ "source.name": "Coursera CSV" });
-
   const rl = readline.createInterface({
     input: fs.createReadStream(filePath, { encoding: "utf-8" }),
     crlfDelay: Infinity,
   });
 
-  let inserted = 0;
-  const batch = [];
+  const SOURCE_NAME = "Coursera CSV";
+  const SOURCE_URL = "https://www.coursera.org";
+
+  let processed = 0;
+  let skipped = 0;
+
   const BATCH_SIZE = 1000;
+  let ops = [];
+
+  async function flush() {
+    if (!ops.length) return;
+    await Course.bulkWrite(ops, { ordered: false });
+    ops = [];
+  }
 
   for await (const line of rl) {
     const raw = line.trim();
     if (!raw) continue;
 
+    processed++;
+
     const normalized = raw.replace(/^\uFEFF/, "");
     const fixed = fixMalformedLeadingQuote(normalized);
-
     const fields = parseCsvLine(fixed);
-    if (fields.length < 12) continue;
 
-    // Αναμενόμενη δομή:
-    // 0 url
-    // 1 title
-    // 2 org
-    // 3 type
-    // 4 image
-    // 5 category
-    // 6 certificate
-    // 7 description
-    // 8 duration
-    // 9 language
-    // 10 level
-    // last = timestamp (με ;;;;;)
+    if (fields.length < 12) {
+      skipped++;
+      continue;
+    }
+
     const url = cleanText(fields[0], "");
+    if (!url) { // χωρίς stable URL δεν κάνουμε write
+      skipped++;
+      continue;
+    }
+
     const title = cleanText(fields[1], "Untitled course");
     const org = cleanText(fields[2], "");
     const category = cleanText(fields[5], "");
-
     const description = cleanText(fields[7], "No description");
 
-    // Strict: πρώτα δοκιμάζουμε τα “σωστά” indexes
     let language = normalizeLanguageStrict(fields[9]);
     let level = normalizeLevelStrict(fields[10]);
 
-    // Window fallback (ΜΟΝΟ κοντά, όχι σε όλη τη γραμμή)
-    if (language === "unknown") {
-      language = findInWindow(fields, 8, 12, LANGUAGE_WHITELIST);
-    }
-    if (level === "unknown") {
-      level = findInWindow(fields, 8, 14, LEVEL_WHITELIST);
-    }
+    if (language === "unknown") language = findInWindow(fields, 8, 12, LANGUAGE_WHITELIST);
+    if (level === "unknown") level = findInWindow(fields, 8, 14, LEVEL_WHITELIST);
 
     const lastUpdated = parseLastUpdated(fields[fields.length - 1]);
-
     const keywords = [org, category].filter((x) => x && x !== "unknown" && x !== "-");
 
-    batch.push({
+    const courseDoc = {
       title,
       shortDescription: description,
       keywords,
       language,
       level,
-      source: { name: "Coursera CSV", url: "https://www.coursera.org" },
-      accessLink: url || "https://www.coursera.org",
+      source: { name: SOURCE_NAME, url: SOURCE_URL },
+      accessLink: url,
       lastUpdated,
+      externalId: url,
+    };
+
+    ops.push({
+      updateOne: {
+        filter: { "source.name": SOURCE_NAME, accessLink: url },
+        update: { $set: courseDoc },
+        upsert: true,
+      },
     });
 
-    if (batch.length >= BATCH_SIZE) {
-      await Course.insertMany(batch, { ordered: false });
-      inserted += batch.length;
-      batch.length = 0;
-    }
+    if (ops.length >= BATCH_SIZE) await flush();
   }
 
-  if (batch.length) {
-    await Course.insertMany(batch, { ordered: false });
-    inserted += batch.length;
-  }
+  await flush();
 
-  console.log("✅ Coursera import finished. Inserted:", inserted);
+  console.log("✅ Coursera import finished.");
+  console.log("Processed:", processed);
+  console.log("Skipped:", skipped);
 }
 
 importCoursera()
