@@ -1,11 +1,10 @@
-FROM python:3.12-slim
+FROM spark:3.5.1
 
-# Εγκατάσταση βιβλιοθηκών που χρειάζεσαι
-RUN pip install --no-cache-dir pyspark psycopg2-binary
+USER root
 
-WORKDIR /app
+# Εγκατάσταση numpy (αυτό λείπει και σου έσκασε το job)
+# Αν δεν υπάρχει pip3 στο image, θα το βάλουμε με apt-get (δες παρακάτω fallback)
+RUN python3 -m pip install --no-cache-dir numpy
 
-# Αντέγραψε μόνο ό,τι χρειάζεται (προς το παρόν main.py)
-COPY main.py .
-
-CMD ["python", "main.py"]
+USER spark
+WORKDIR /opt/spark-app

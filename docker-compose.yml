@@ -29,16 +29,18 @@ services:
 
 
   spark:
-    image: spark:3.5.1
+    build: ./pyspark
     depends_on:
       - mongo
     environment:
       - MONGO_URI=mongodb://mongo:27017/courses_db
     volumes:
       - ./pyspark:/opt/spark-app
-      
+      - spark_ivy:/opt/spark/ivy2
     working_dir: /opt/spark-app
     command: ["sleep", "infinity"]
 
 volumes:
   mongo_data:
+  spark_ivy:
+  
