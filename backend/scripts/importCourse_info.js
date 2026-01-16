@@ -39,10 +39,10 @@ function normalizeUdemyUrl(v) {
     else if (s.startsWith("www.")) s = `https://${s}`;
   }
 
-  // drop querystring/fragments
+  // drop query string
   s = s.split("#")[0].split("?")[0];
 
-  // remove trailing slash
+  // remove slash
   if (s.endsWith("/")) s = s.slice(0, -1);
 
   return s;
@@ -76,10 +76,7 @@ async function importUdemy() {
   const filePath = path.join(__dirname, "..", "data", "Course_info_n.csv");
   if (!fs.existsSync(filePath)) throw new Error(`CSV not found at: ${filePath}`);
 
-  console.log("📥 Reading Udemy CSV from:", filePath);
-
-  
-
+  console.log("Reading Udemy CSV from:", filePath);
 
   const SOURCE_NAME = "Udemy CSV";
   const SOURCE_URL = "https://www.udemy.com";
@@ -167,7 +164,7 @@ const ENCODING = "utf8";
           upsertedTotal += stats.upserted;
           modifiedTotal += stats.modified;
 
-          console.log("✅ Udemy import finished!");
+          console.log("Udemy import finished!");
           console.log(`Processed: ${processed}`);
           console.log(`Skipped: ${skipped}`);
           console.log(`Upserted: ${upsertedTotal}`);
@@ -184,6 +181,6 @@ const ENCODING = "utf8";
 importUdemy()
   .then(() => process.exit(0))
   .catch((err) => {
-    console.error("❌ Udemy import error:", err);
+    console.error(" Udemy import error:", err);
     process.exit(1);
   });

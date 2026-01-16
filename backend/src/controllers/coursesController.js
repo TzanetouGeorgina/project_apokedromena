@@ -107,7 +107,7 @@ export async function getCourseById(req, res) {
   }
 }
 
-// POST /courses (dev only)
+// POST /courses
 export async function createCourse(req, res) {
   try {
     const course = await Course.create(req.body);
@@ -123,10 +123,6 @@ export async function createCourse(req, res) {
  * Query params:
  * - format: jsonl (default) | json | csv
  * - source, language, level: optional filters
- *
- * Notes:
- * - jsonl streams line-by-line (recommended for Spark / big datasets).
- * - json returns a big array (not recommended for 200k+ unless filtered).
  */
 export async function exportCourses(req, res) {
   try {
@@ -198,7 +194,7 @@ export async function exportCourses(req, res) {
       return res.end();
     }
 
-    // default: jsonl (NDJSON)
+    // default: jsonl 
     res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
     res.setHeader("Content-Disposition", "attachment; filename=courses.jsonl");
 

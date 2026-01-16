@@ -91,7 +91,7 @@ async function importCoursera() {
   await connectDB();
 
   const filePath = path.join(__dirname, "..", "data", "coursera.csv");
-  console.log("📥 Reading Coursera CSV from:", filePath);
+  console.log("Reading Coursera CSV from:", filePath);
 
   const rl = readline.createInterface({
     input: fs.createReadStream(filePath, { encoding: "utf-8" }),
@@ -173,7 +173,7 @@ async function importCoursera() {
 
   await flush();
 
-  console.log("✅ Coursera import finished.");
+  console.log("Coursera import finished.");
   console.log("Processed:", processed);
   console.log("Skipped:", skipped);
 }
@@ -181,6 +181,6 @@ async function importCoursera() {
 importCoursera()
   .then(() => process.exit(0))
   .catch((err) => {
-    console.error("❌ Import failed:", err);
+    console.error("Import failed:", err);
     process.exit(1);
   });
