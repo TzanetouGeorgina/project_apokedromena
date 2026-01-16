@@ -13,7 +13,7 @@ function CoursesPage() {
   const [language, setLanguage] = useState("");
   const [level, setLevel] = useState("");
   const [source, setSource] = useState("");
-  const [keyword, getKeyword] = useState("");
+  const [category, setCategory] = useState("");
 
   //νέα δεδομένα
   useEffect(() => {
@@ -40,8 +40,8 @@ function CoursesPage() {
             params.source = source;
         }
 
-        if (keyword) {
-            params.keyword = keyword;
+        if (category) {
+            params.category = category;
         }
         //φέρε δεδομένα για το συγεκριμένο id μέσω get request
         const response = await axios.get(`${API_BASE_URL}/courses`, {
@@ -58,11 +58,11 @@ function CoursesPage() {
     };
 
     fetchCourses();
-  }, [search, language, level, source, keyword]); //για να δουλεύει η αναζήτηση 
+  }, [search, language, level, source, category]); //για να δουλεύει η αναζήτηση 
 
   return (
     <div>
-      <h2>Courses</h2>
+      <h2>Courses</h2>  
 
       <div style={{ marginBottom: "1rem" }}>
         <input
@@ -82,6 +82,7 @@ function CoursesPage() {
         marginBottom: "1.5rem",
       }}
     >
+<div className="filters-container">
      {/* Γλώσσα */}
       <select
         value={language}
@@ -119,12 +120,14 @@ function CoursesPage() {
       {/* Λέξεις-κελιδιά */}
       <input
         type="text"
-        placeholder="Keyword / subject..." 
-        value={keyword}
-        onChange={(e) => setKeyword(e.target.value)}
-        style={{ padding: "0.5rem" }}
+        placeholder="Category / subject..." 
+        value={category}
+        onChange={(e) => setCategory(e.target.value)}
+        style={{ padding: "0.55rem 0.7rem", minWidth: "180px" }}
       />
     </div>
+
+</div>
 
       {loading && <p>Loading courses...</p>}
       {error && <p style={{ color: "red" }}>{error}</p>}
@@ -137,7 +140,7 @@ function CoursesPage() {
         <ul style={{ listStyle: "none", padding: 0 }}>
           {courses.map((course) => (
             <li
-              key={course._id || course.id}
+              key={course._id || course.id} className="course-card"
               style={{
                 border: "1px solid #ddd",
                 borderRadius: "8px",

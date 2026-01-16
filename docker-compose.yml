@@ -29,12 +29,16 @@ services:
 
 
   spark:
-    build: ./pyspark
+    image: apache/spark:3.5.1
     depends_on:
       - mongo
     environment:
-      # placeholder για αργότερα, όταν θα συνδέσουμε Spark με Mongo
       - MONGO_URI=mongodb://mongo:27017/courses_db
+    volumes:
+      - ./pyspark:/opt/spark-app
+      - ./pyspark/jars:/opt/spark/jars
+    working_dir: /opt/spark-app
+    command: ["sleep", "infinity"]
 
 volumes:
   mongo_data:

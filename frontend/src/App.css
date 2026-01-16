@@ -15,15 +15,15 @@ body {
     sans-serif;
   line-height: 1.5;
   font-weight: 400;
-  background: #f5f5f5; /* εδώ βάλε ό,τι φόντο θέλεις */
+  background: #f4f6f8; /* εδώ βάλε ό,τι φόντο θέλεις */
   color: #6c93b6;      /* βασικό χρώμα κειμένου */
 }
 
 /* Root div */
 #root {
-  max-width: 1200px;
+  max-width: 900px;
   margin: 0 auto;
-  padding: 1rem;
+  padding: 2rem;
 }
 
 /* Headings */
@@ -44,4 +44,65 @@ a:hover {
   text-decoration: underline;
 }
 
+header h1 {
+  font-size: 2.2rem;
+  margin-bottom: 0.5rem;
+  color: #345c8c; /* πιο ήρεμο μπλε */
+  font-weight: 600;
+}
+
+header nav a {
+  font-size: 1rem;
+}
+
+.filters-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  background: #ffffff;
+  padding: 1rem;
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+  margin-bottom: 2rem;
+}
+
 /* Μπορείς να προσθέσεις εδώ styles για κουμπιά, φόρμες κλπ αν χρειαστεί */
+input[type="text"],
+select {
+  padding: 0.55rem 0.7rem;
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  background: #fafafa;
+}
+
+input[type="text"]:focus,
+select:focus {
+  border-color: #4b8ef7;
+  outline: none;
+  background: white;
+}
+
+.course-card {
+  background: white;
+  border-radius: 8px;
+  padding: 1rem 1.3rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  border: 1px solid #e5e5e5;
+}
+
+.course-card h3 {
+  margin-top: 0;
+  font-size: 1.2rem;
+  color: #2a3b4f;
+}
+
+.course-card p {
+  margin-bottom: 0.5rem;
+}
+
+.course-card a {
+  font-weight: 600;
+  color: #3f6fd6;
+}
