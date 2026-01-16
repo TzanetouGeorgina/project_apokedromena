@@ -207,3 +207,8 @@ export async function exportCourses(req, res) {
     res.status(500).json({ error: "Internal server error" });
   }
 }
+
+// GET /courses/:id/similar
+export async function getSimilarCourses(req, res) {
+  return res.json({ data: [] });
+}
