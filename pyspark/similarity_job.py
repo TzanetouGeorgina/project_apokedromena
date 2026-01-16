@@ -4,12 +4,13 @@ import argparse
 from pyspark.sql import functions as F
 from pyspark.sql import Window
 from pyspark.sql.types import ArrayType
+from pyspark import StorageLevel
 
 from pyspark.ml import Pipeline
 from pyspark.ml.feature import (
     RegexTokenizer,
     StopWordsRemover,
-    CountVectorizer,
+    HashingTF,
     IDF,
     Normalizer,
 )
@@ -23,6 +24,9 @@ def build_spark(app_name: str, mongo_uri: str):
         SparkSession.builder.appName(app_name)
         .config("spark.mongodb.read.connection.uri", mongo_uri)
         .config("spark.mongodb.write.connection.uri", mongo_uri)
+        # sensible defaults for single-container runs
+        .config("spark.sql.shuffle.partitions", "200")
+        .config("spark.default.parallelism", "200")
         .getOrCreate()
     )
     spark.sparkContext.setLogLevel("WARN")
@@ -37,25 +41,30 @@ def main():
     parser.add_argument("--in-collection", default="courses")
     parser.add_argument("--out-collection", default="course_similarity")
 
-    parser.add_argument("--k", type=int, default=5)
+    parser.add_argument("--k", type=int, default=5, help="Top-K recommendations per course")
     parser.add_argument("--id-col", default="_id", help="ID column in courses (e.g. _id or courseId)")
 
-    # TF-IDF tuning
-    parser.add_argument("--min-doc-freq", type=int, default=1)
-    parser.add_argument("--vocab-size", type=int, default=50000)
+    # TF-IDF (HashingTF) controls
+    parser.add_argument("--num-features", type=int, default=262144,  # 2^18
+                        help="HashingTF feature dimension (bigger -> fewer collisions, more memory)")
+    parser.add_argument("--min-text-len", type=int, default=30, help="Drop courses with shorter text")
 
     # LSH tuning
     parser.add_argument("--bucket-length", type=float, default=2.0)
-    parser.add_argument("--num-hash-tables", type=int, default=5)
-    parser.add_argument("--max-dist", type=float, default=2.5, help="Euclidean threshold on normalized vectors")
+    parser.add_argument("--num-hash-tables", type=int, default=4)
+    parser.add_argument("--max-dist", type=float, default=1.2,
+                        help="Euclidean threshold on L2-normalized vectors (smaller -> fewer pairs)")
 
-    # Optional debug
-    parser.add_argument("--limit", type=int, default=0, help="If >0, limit courses for debug (e.g. 200)")
+    # Candidate control (crucial for large datasets)
+    parser.add_argument("--candidate-cap", type=int, default=80,
+                        help="Keep at most this many nearest candidates per src before top-K (memory safety)")
+
+    # Optional debug / smoke test
+    parser.add_argument("--limit", type=int, default=0,
+                        help="If >0, limit number of courses for debug (e.g. 5000)")
 
     args = parser.parse_args()
     spark = build_spark("course-similarity-job", args.mongo_uri)
-
-    ID_COL = args.id_col
 
     # 1) Read courses
     courses = (
@@ -65,10 +74,10 @@ def main():
         .load()
     )
 
-    if ID_COL not in courses.columns:
-        raise ValueError(f"ID column '{ID_COL}' not found in input. Available columns: {courses.columns}")
+    if args.id_col not in courses.columns:
+        raise ValueError(f"ID column '{args.id_col}' not found. Available: {courses.columns}")
 
-    df = courses.withColumn("course_id", F.col(ID_COL).cast("string"))
+    df = courses.withColumn("course_id", F.col(args.id_col).cast("string"))
 
     # 2) Build text = shortDescription + keywords
     if "shortDescription" in df.columns:
@@ -91,50 +100,42 @@ def main():
     df = df.withColumn("text", F.trim(F.concat_ws(" ", F.col("short_desc"), F.col("kw_text"))))
     df = df.withColumn("text", F.regexp_replace(F.col("text"), r"\s+", " "))
 
-    # Keep language for filtering
+    # language (required for filtering)
     if "language" not in df.columns:
         df = df.withColumn("language", F.lit(None).cast("string"))
     else:
-        df = df.withColumn("language", F.col("language").cast("string"))
+        df = df.withColumn("language", F.trim(F.col("language").cast("string")))
 
-    # Basic cleaning
+    # Keep only what we need, clean & filter
     df = df.select("course_id", "language", "text").dropna(subset=["course_id"])
-    df = df.filter(F.length(F.col("text")) > 0)
-    df = df.dropDuplicates(["course_id"])
-
-    # Language filtering: we want only courses with a valid language
     df = df.filter(F.col("language").isNotNull() & (F.length(F.col("language")) > 0))
+    df = df.filter(F.length(F.col("text")) >= F.lit(args.min_text_len))
+    df = df.dropDuplicates(["course_id"])
 
     if args.limit and args.limit > 0:
         df = df.limit(args.limit)
 
-    courses_count = df.count()
-    print(f"✅ Courses for ML (after text+language filters): {courses_count}")
-    df.select("course_id", "language", "text").show(5, truncate=80)
+    # Light sanity output (doesn't scan full dataset in a costly way)
+    print("✅ Sample input rows:")
+    df.show(5, truncate=90)
 
-    if courses_count < 2:
-        print("⚠️ Not enough courses to compute similarity (need at least 2). Exiting.")
-        spark.stop()
-        return
-
-    # 3) TF-IDF pipeline
+    # 3) TF-IDF pipeline via HashingTF (memory safer than CountVectorizer)
     tokenizer = RegexTokenizer(inputCol="text", outputCol="tokens", pattern=r"\W+", minTokenLength=2)
-    remover = StopWordsRemover(inputCol="tokens", outputCol="filtered")  # default English stopwords
-    cv = CountVectorizer(
-        inputCol="filtered",
-        outputCol="tf",
-        vocabSize=args.vocab_size,
-        minDF=args.min_doc_freq,
-    )
+    remover = StopWordsRemover(inputCol="tokens", outputCol="filtered")
+
+    hashing_tf = HashingTF(inputCol="filtered", outputCol="tf", numFeatures=args.num_features)
     idf = IDF(inputCol="tf", outputCol="tfidf")
     norm = Normalizer(inputCol="tfidf", outputCol="features", p=2.0)
 
-    pipeline = Pipeline(stages=[tokenizer, remover, cv, idf, norm])
+    pipeline = Pipeline(stages=[tokenizer, remover, hashing_tf, idf, norm])
     model = pipeline.fit(df)
 
     featurized = model.transform(df).select("course_id", "language", "features")
 
-    # 4) LSH similarity
+    # Partition by language helps reduce shuffle skew a bit
+    featurized = featurized.repartition(200, "language")
+
+    # 4) LSH similarity on normalized vectors
     lsh = BucketedRandomProjectionLSH(
         inputCol="features",
         outputCol="hashes",
@@ -142,9 +143,11 @@ def main():
         numHashTables=args.num_hash_tables,
     )
     lsh_model = lsh.fit(featurized)
-    hashed = lsh_model.transform(featurized).cache()
 
-    # approxSimilarityJoin output uses datasetA/datasetB
+    hashed = lsh_model.transform(featurized).select("course_id", "language", "features", "hashes") \
+        .persist(StorageLevel.MEMORY_AND_DISK)
+
+    # Important: approxSimilarityJoin output is datasetA/datasetB
     pairs = (
         lsh_model.approxSimilarityJoin(
             hashed, hashed, args.max_dist, distCol="dist"
@@ -159,17 +162,13 @@ def main():
         .filter(F.col("src") != F.col("dst"))
         .filter(F.col("src_lang") == F.col("dst_lang"))  # language filter
         .select("src", "dst", "dist")
-    )
+    ).persist(StorageLevel.MEMORY_AND_DISK)
 
-    pairs.cache()
+    # Existence check: lightweight
     any_pair = pairs.limit(1).count()
-    print(f"✅ Similarity pairs exist (same language)? {'YES' if any_pair > 0 else 'NO'}")
-
+    print(f"✅ Similarity pairs exist? {'YES' if any_pair > 0 else 'NO'}")
     if any_pair == 0:
-        print("⚠️ No similarity pairs found within the threshold for same-language courses.")
-        print("   Try increasing --max-dist or reducing --min-doc-freq.")
-
-        # Still write empty arrays for every course (same output schema)
+        # Write empty schema for all courses (so backend doesn't break)
         empty_out = hashed.select(F.col("course_id").alias("courseId")).distinct() \
             .withColumn("similar_ids", F.array().cast("array<string>")) \
             .withColumn("scores", F.array().cast("array<double>"))
@@ -187,13 +186,22 @@ def main():
     # Convert distance (unit vectors) -> cosine similarity: cosine = 1 - dist^2/2
     pairs = pairs.withColumn("score", (F.lit(1.0) - (F.col("dist") * F.col("dist")) / F.lit(2.0)))
 
+    # Candidate cap per src (critical for large datasets)
+    # Keep nearest candidates (smallest dist / highest score)
+    w_cand = Window.partitionBy("src").orderBy(F.asc("dist"), F.asc("dst"))
+    pairs_capped = (
+        pairs.withColumn("rn", F.row_number().over(w_cand))
+        .filter(F.col("rn") <= F.lit(args.candidate_cap))
+        .drop("rn")
+    )
+
     # Keep best per (src,dst)
-    pairs = pairs.groupBy("src", "dst").agg(F.max("score").alias("score"))
+    pairs_capped = pairs_capped.groupBy("src", "dst").agg(F.max("score").alias("score"))
 
     # 5) Top-K per course
-    w = Window.partitionBy("src").orderBy(F.desc("score"), F.asc("dst"))
+    w_topk = Window.partitionBy("src").orderBy(F.desc("score"), F.asc("dst"))
     topk = (
-        pairs.withColumn("rn", F.row_number().over(w))
+        pairs_capped.withColumn("rn", F.row_number().over(w_topk))
         .filter(F.col("rn") <= F.lit(args.k))
         .drop("rn")
     )
@@ -207,7 +215,7 @@ def main():
         .withColumnRenamed("src", "courseId")
     )
 
-    # Ensure every course appears in output
+    # Ensure every course appears (even if it ends up with empty arrays)
     all_courses = hashed.select(F.col("course_id").alias("courseId")).distinct()
     result = (
         all_courses.join(result, on="courseId", how="left")
