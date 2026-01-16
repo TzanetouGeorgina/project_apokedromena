@@ -29,14 +29,14 @@ services:
 
 
   spark:
-    image: apache/spark:3.5.1
+    image: spark:3.5.1
     depends_on:
       - mongo
     environment:
       - MONGO_URI=mongodb://mongo:27017/courses_db
     volumes:
       - ./pyspark:/opt/spark-app
-      - ./pyspark/jars:/opt/spark/jars
+      
     working_dir: /opt/spark-app
     command: ["sleep", "infinity"]
 

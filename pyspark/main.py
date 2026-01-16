@@ -1,26 +1,75 @@
 import os
-import psycopg2
+from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
 
-db_host = os.environ["DB_HOST"]
-db_port = os.environ["DB_PORT"]
-db_user = os.environ["DB_USER"]
-db_password = os.environ["DB_PASSWORD"]
-db_name = os.environ["DB_NAME"]
+# =========================
+# Mongo configuration
+# =========================
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://mongo:27017")
+DB_NAME = "courses_db"
+COURSES_COLLECTION = "courses"
+TEST_COLLECTION = "spark_test"
 
-print("Connecting to DB...", db_host, db_port, db_name)
+print("Starting Spark job...")
+print("Mongo URI:", MONGO_URI)
+print("Database:", DB_NAME)
 
-conn = psycopg2.connect(
-    host=db_host,
-    port=db_port,
-    user=db_user,
-    password=db_password,
-    dbname=db_name,
+# =========================
+# Spark session
+# =========================
+spark = (
+    SparkSession.builder
+    .appName("spark-mongo-connection-test")
+    .config("spark.mongodb.read.connection.uri", MONGO_URI)
+    .config("spark.mongodb.write.connection.uri", MONGO_URI)
+    .config("spark.mongodb.read.database", DB_NAME)
+    .config("spark.mongodb.write.database", DB_NAME)
+    .getOrCreate()
 )
 
-cur = conn.cursor()
-cur.execute("SELECT 1;")
-print("DB OK, result:", cur.fetchone())
+# =========================
+# READ TEST
+# =========================
+print("Reading courses from MongoDB...")
 
-cur.close()
-conn.close()
-print("All good, Spark container can reach DB!")
+courses_df = (
+    spark.read
+    .format("mongodb")
+    .option("collection", COURSES_COLLECTION)
+    .load()
+)
+
+count = courses_df.count()
+print(f"READ OK - Found {count} courses")
+
+courses_df.select(
+    "title",
+    "language",
+    F.col("source.name").alias("source")
+).show(5, truncate=True)
+
+# =========================
+# WRITE TEST
+# =========================
+print("Writing test document to MongoDB...")
+
+test_df = (
+    spark.createDataFrame([("spark_ok",)], ["status"])
+    .withColumn("timestamp", F.current_timestamp())
+)
+
+(
+    test_df.write
+    .format("mongodb")
+    .option("collection", TEST_COLLECTION)
+    .mode("append")
+    .save()
+)
+
+print(f"WRITE OK - Document written to {DB_NAME}.{TEST_COLLECTION}")
+
+# =========================
+# Finish
+# =========================
+spark.stop()
+print("Spark job finished successfully.")
