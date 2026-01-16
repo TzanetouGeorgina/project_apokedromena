@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import csv from "csv-parser";
-import iconv from "iconv-lite";
+
 
 import "dotenv/config";
 import { connectDB } from "../src/config/db.js";
@@ -30,13 +30,24 @@ function parseDateOrNull(v) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 function normalizeUdemyUrl(v) {
-  const s = cleanStr(v);
-  if (!s) return "";
-  if (s.startsWith("http://") || s.startsWith("https://")) return s;
-  if (s.startsWith("/")) return `https://www.udemy.com${s}`;
-  if (s.startsWith("www.")) return `https://${s}`;
+  const s0 = cleanStr(v);
+  if (!s0) return "";
+  let s = s0;
+
+  if (!s.startsWith("http://") && !s.startsWith("https://")) {
+    if (s.startsWith("/")) s = `https://www.udemy.com${s}`;
+    else if (s.startsWith("www.")) s = `https://${s}`;
+  }
+
+  // drop querystring/fragments
+  s = s.split("#")[0].split("?")[0];
+
+  // remove trailing slash
+  if (s.endsWith("/")) s = s.slice(0, -1);
+
   return s;
 }
+
 function normalizeLevel(v) {
   const s = cleanStr(v).toLowerCase();
   if (!s || s === "-") return "unknown";
@@ -62,13 +73,13 @@ function buildKeywords(row) {
 async function importUdemy() {
   await connectDB();
 
-  const filePath = path.join(__dirname, "..", "data", "Course_info.csv");
+  const filePath = path.join(__dirname, "..", "data", "Course_info_n.csv");
   if (!fs.existsSync(filePath)) throw new Error(`CSV not found at: ${filePath}`);
 
   console.log("📥 Reading Udemy CSV from:", filePath);
 
-  // Αν βλέπεις “σπασμένα” (ΓΆ, μ—‰λ…), άλλαξε σε "win1252"
-  const ENCODING = "utf8";
+  
+
 
   const SOURCE_NAME = "Udemy CSV";
   const SOURCE_URL = "https://www.udemy.com";
@@ -88,11 +99,11 @@ async function importUdemy() {
     const res = await Course.bulkWrite(toRun, { ordered: false });
     return { upserted: res.upsertedCount || 0, modified: res.modifiedCount || 0 };
   }
+const ENCODING = "utf8";
 
-  const stream = fs
-    .createReadStream(filePath)
-    .pipe(iconv.decodeStream(ENCODING))
-    .pipe(csv());
+ const stream = fs
+  .createReadStream(filePath, { encoding: "utf8" })
+  .pipe(csv());
 
   return new Promise((resolve, reject) => {
     stream

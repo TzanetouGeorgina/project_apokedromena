@@ -1,29 +1,31 @@
-// src/controllers/coursesController.js
+// backend/src/controllers/coursesController.js
 import mongoose from "mongoose";
 import Course from "../models/Course.js";
 
+// Helper: μετατρέπει null/undefined/κενό string σε "unknown"
 function toUnknown(value) {
   if (value === undefined || value === null) return "unknown";
   if (typeof value === "string" && value.trim() === "") return "unknown";
   return value;
 }
 
+// Μορφοποίηση course πριν το στείλουμε στο frontend / export
 function formatCourse(courseDoc) {
   const course = courseDoc?.toObject ? courseDoc.toObject() : courseDoc;
 
   return {
-    id: course._id,
-    title: toUnknown(course.title),
-    shortDescription: toUnknown(course.shortDescription),
-    keywords: course.keywords ?? [],
-    language: toUnknown(course.language),
-    level: toUnknown(course.level),
+    id: course?._id,
+    title: toUnknown(course?.title),
+    shortDescription: toUnknown(course?.shortDescription),
+    keywords: course?.keywords ?? [],
+    language: toUnknown(course?.language),
+    level: toUnknown(course?.level),
     source: {
-      name: toUnknown(course.source?.name),
-      url: toUnknown(course.source?.url),
+      name: toUnknown(course?.source?.name),
+      url: toUnknown(course?.source?.url),
     },
-    accessLink: toUnknown(course.accessLink),
-    lastUpdated: course.lastUpdated ? new Date(course.lastUpdated).toISOString() : "unknown",
+    accessLink: toUnknown(course?.accessLink),
+    lastUpdated: course?.lastUpdated ? new Date(course.lastUpdated).toISOString() : "unknown",
   };
 }
 
@@ -44,42 +46,33 @@ export async function getCourses(req, res) {
     if (language) filters.language = language;
     if (level) filters.level = level;
     if (source) filters["source.name"] = source;
-    if (category) filters.keywords = { $in: [category] };
 
-    const pageNumber = Math.max(1, Number(page) || 1);
-    const pageSize = Math.min(100, Math.max(1, Number(limit) || 20));
-    const skip = (pageNumber - 1) * pageSize;
+    // Στο schema δεν έχουμε category field, οπότε χρησιμοποιούμε keywords[]
+    if (category) filters.keywords = category;
 
-    const search = (q || "").trim();
-
-    let findQuery;
+    let query;
     let countFilter;
 
-    if (search.length >= 2) {
-      const textCriteria = { $text: { $search: search }, ...filters };
-      findQuery = Course.find(textCriteria, { score: { $meta: "textScore" } })
-        .sort({ score: { $meta: "textScore" } })
-        .skip(skip)
-        .limit(pageSize)
-        .lean();
+    if (q) {
+      const textCriteria = { $text: { $search: q }, ...filters };
+
+      query = Course.find(textCriteria, { score: { $meta: "textScore" } })
+        .sort({ score: { $meta: "textScore" } });
 
       countFilter = textCriteria;
     } else {
-      findQuery = Course.find(filters)
-        .sort({ lastUpdated: -1, _id: -1 })
-        .skip(skip)
-        .limit(pageSize)
-        .lean();
-
+      query = Course.find(filters).sort({ createdAt: -1 });
       countFilter = filters;
     }
 
+    const pageNumber = Number(page) || 1;
+    const pageSize = Number(limit) || 80;
+    const skip = (pageNumber - 1) * pageSize;
+
     const [data, total] = await Promise.all([
-      findQuery,
+      query.skip(skip).limit(pageSize),
       Course.countDocuments(countFilter),
     ]);
-
-    const pages = Math.ceil(total / pageSize);
 
     res.json({
       data: data.map(formatCourse),
@@ -87,9 +80,6 @@ export async function getCourses(req, res) {
         page: pageNumber,
         pageSize,
         total,
-        pages,
-        hasPrev: pageNumber > 1,
-        hasNext: pageNumber < pages,
       },
     });
   } catch (err) {
@@ -107,7 +97,7 @@ export async function getCourseById(req, res) {
       return res.status(400).json({ error: "Invalid course id" });
     }
 
-    const course = await Course.findById(id).lean();
+    const course = await Course.findById(id);
     if (!course) return res.status(404).json({ error: "Course not found" });
 
     res.json(formatCourse(course));
@@ -117,7 +107,7 @@ export async function getCourseById(req, res) {
   }
 }
 
-// POST /courses (dev)
+// POST /courses (dev only)
 export async function createCourse(req, res) {
   try {
     const course = await Course.create(req.body);
@@ -125,5 +115,99 @@ export async function createCourse(req, res) {
   } catch (err) {
     console.error("createCourse error:", err);
     res.status(400).json({ error: err.message });
+  }
+}
+
+/**
+ * GET /courses/export
+ * Query params:
+ * - format: jsonl (default) | json | csv
+ * - source, language, level: optional filters
+ *
+ * Notes:
+ * - jsonl streams line-by-line (recommended for Spark / big datasets).
+ * - json returns a big array (not recommended for 200k+ unless filtered).
+ */
+export async function exportCourses(req, res) {
+  try {
+    const { format = "jsonl", source, language, level } = req.query;
+
+    const filters = {};
+    if (source) filters["source.name"] = source;
+    if (language) filters.language = language;
+    if (level) filters.level = level;
+
+    // minimal projection for export
+    const projection = {
+      title: 1,
+      shortDescription: 1,
+      keywords: 1,
+      language: 1,
+      level: 1,
+      source: 1,
+      accessLink: 1,
+      lastUpdated: 1,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    const cursor = Course.find(filters, projection).lean().cursor();
+
+    if (format === "json") {
+      const all = [];
+      for await (const doc of cursor) all.push(formatCourse(doc));
+
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.setHeader("Content-Disposition", "attachment; filename=courses.json");
+      return res.status(200).json(all);
+    }
+
+    if (format === "csv") {
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", "attachment; filename=courses.csv");
+
+      // header
+      res.write(
+        "id,title,shortDescription,keywords,language,level,sourceName,sourceUrl,accessLink,lastUpdated\n"
+      );
+
+      const esc = (v) => {
+        if (v === null || v === undefined) return "";
+        const s = String(v).replace(/"/g, '""');
+        return `"${s}"`;
+      };
+
+      for await (const doc of cursor) {
+        const c = formatCourse(doc);
+        res.write(
+          [
+            esc(c.id),
+            esc(c.title),
+            esc(c.shortDescription),
+            esc((c.keywords || []).join("|")),
+            esc(c.language),
+            esc(c.level),
+            esc(c.source?.name),
+            esc(c.source?.url),
+            esc(c.accessLink),
+            esc(c.lastUpdated),
+          ].join(",") + "\n"
+        );
+      }
+
+      return res.end();
+    }
+
+    // default: jsonl (NDJSON)
+    res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
+    res.setHeader("Content-Disposition", "attachment; filename=courses.jsonl");
+
+    for await (const doc of cursor) {
+      res.write(JSON.stringify(formatCourse(doc)) + "\n");
+    }
+    return res.end();
+  } catch (err) {
+    console.error("exportCourses error:", err);
+    res.status(500).json({ error: "Internal server error" });
   }
 }
