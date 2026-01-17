@@ -1,12 +1,17 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { fetchCourseById } from "../api/courses";
+import { fetchCourseById, fetchSimilarCourses } from "../api/courses";
 
 function CourseDetailsPage() {
   const { id } = useParams();
+
   const [course, setCourse] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  const [similar, setSimilar] = useState([]);
+  const [loadingSimilar, setLoadingSimilar] = useState(true);
+  const [similarError, setSimilarError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -23,6 +28,31 @@ function CourseDetailsPage() {
         if (!cancelled) setError("Failed to load course details. Please try again.");
       } finally {
         if (!cancelled) setLoading(false);
+      }
+    }
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+  // ✅ fetch similars
+  useEffect(() => {
+    let cancelled = false;
+
+    async function run() {
+      setLoadingSimilar(true);
+      setSimilarError("");
+
+      try {
+        const data = await fetchSimilarCourses(id, 10);
+        if (!cancelled) setSimilar(Array.isArray(data) ? data : []);
+      } catch (e) {
+        console.error(e);
+        if (!cancelled) setSimilarError("Failed to load similar courses.");
+      } finally {
+        if (!cancelled) setLoadingSimilar(false);
       }
     }
 
@@ -81,6 +111,31 @@ function CourseDetailsPage() {
             Go to original repository
           </a>
         </p>
+      )}
+
+      {/* ✅ Similar courses section */}
+      <hr />
+      <h3>Similar courses</h3>
+
+      {loadingSimilar && <p>Loading similar courses...</p>}
+
+      {!loadingSimilar && similarError && (
+        <p style={{ color: "red" }}>{similarError}</p>
+      )}
+
+      {!loadingSimilar && !similarError && similar.length === 0 && (
+        <p>No similar courses found.</p>
+      )}
+
+      {!loadingSimilar && similar.length > 0 && (
+        <ul>
+          {similar.map((c) => (
+            <li key={c.id}>
+              <Link to={`/courses/${c.id}`}>{c.title}</Link>
+              {c.shortDescription ? <div>{c.shortDescription}</div> : null}
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

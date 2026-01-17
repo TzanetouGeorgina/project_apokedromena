@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import Course from "../models/Course.js";
+import CourseSimilarity from "../models/CourseSimilarity.js";
 
 // Helper: μετατρέπει null/undefined/κενό string σε "unknown"
 function toUnknown(value) {
@@ -56,8 +57,9 @@ export async function getCourses(req, res) {
     if (q) {
       const textCriteria = { $text: { $search: q }, ...filters };
 
-      query = Course.find(textCriteria, { score: { $meta: "textScore" } })
-        .sort({ score: { $meta: "textScore" } });
+      query = Course.find(textCriteria, { score: { $meta: "textScore" } }).sort({
+        score: { $meta: "textScore" },
+      });
 
       countFilter = textCriteria;
     } else {
@@ -102,6 +104,48 @@ export async function getCourseById(req, res) {
     res.json(formatCourse(course));
   } catch (err) {
     console.error("getCourseById error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+}
+
+// ✅ NEW: GET /courses/:id/similar
+export async function getSimilarCourses(req, res) {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: "Invalid course id" });
+    }
+
+    // Το Spark γράφει στο course_similarity με courseId ως string
+    const sim = await CourseSimilarity.findOne({ courseId: String(id) }).lean();
+
+    if (!sim || !Array.isArray(sim.similar_ids) || sim.similar_ids.length === 0) {
+      return res.json({
+        data: [],
+        pagination: { page: 1, pageSize: 0, total: 0 },
+      });
+    }
+
+    // /courses/:id/similar?limit=10
+    const limit = Math.min(Number(req.query.limit) || 10, 50);
+    const ids = sim.similar_ids.slice(0, limit);
+
+    // Φέρνουμε τα courses
+    const courses = await Course.find({ _id: { $in: ids } });
+
+    // Κρατάμε τη σειρά που έδωσε ο Spark
+    const byId = new Map(courses.map((c) => [String(c._id), c]));
+    const ordered = ids.map((cid) => byId.get(String(cid))).filter(Boolean);
+
+    res.json({
+      data: ordered.map(formatCourse),
+      pagination: { page: 1, pageSize: ordered.length, total: ordered.length },
+      // Αν το θες, μπορείς να το ανοίξεις και αυτό:
+      // scores: (sim.scores ?? []).slice(0, limit),
+    });
+  } catch (err) {
+    console.error("getSimilarCourses error:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 }

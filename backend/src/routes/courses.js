@@ -4,18 +4,18 @@ import {
   getCourseById,
   createCourse,
   getCoursesMeta,
+  getSimilarCourses,
 } from "../controllers/coursesController.js";
 
 const router = Router();
 
 router.get("/", getCourses);
-
-// ✅ ΠΡΙΝ το "/:id"
 router.get("/meta", getCoursesMeta);
 
-router.get("/:id", getCourseById);
+// ΠΡΕΠΕΙ να είναι εδώ
+router.get("/:id/similar", getSimilarCourses);
 
-// Προσωρινά, για dev
+router.get("/:id", getCourseById);
 router.post("/", createCourse);
 
 export default router;
