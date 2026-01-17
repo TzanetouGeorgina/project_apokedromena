@@ -143,4 +143,3 @@ export async function createCourse(req, res) {
     res.status(400).json({ error: err.message });
   }
 }
-
