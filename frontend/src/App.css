@@ -1,5 +1,6 @@
-/* ==== Global styles ==== */
+/* src/App.css */
 
+/* ==== Global styles ==== */
 * {
   box-sizing: border-box;
 }
@@ -15,18 +16,16 @@ body {
     sans-serif;
   line-height: 1.5;
   font-weight: 400;
-  background: #f4f6f8; /* εδώ βάλε ό,τι φόντο θέλεις */
-  color: #6c93b6;      /* βασικό χρώμα κειμένου */
+  background: #f4f6f8;
+  color: #6c93b6;
 }
 
-/* Root div */
 #root {
   max-width: 900px;
   margin: 0 auto;
   padding: 2rem;
 }
 
-/* Headings */
 h1,
 h2,
 h3 {
@@ -34,7 +33,6 @@ h3 {
   margin-bottom: 0.5rem;
 }
 
-/* Links */
 a {
   color: #2563eb;
   text-decoration: none;
@@ -47,7 +45,7 @@ a:hover {
 header h1 {
   font-size: 2.2rem;
   margin-bottom: 0.5rem;
-  color: #345c8c; /* πιο ήρεμο μπλε */
+  color: #345c8c;
   font-weight: 600;
 }
 
@@ -62,11 +60,10 @@ header nav a {
   background: #ffffff;
   padding: 1rem;
   border-radius: 8px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
   margin-bottom: 2rem;
 }
 
-/* Μπορείς να προσθέσεις εδώ styles για κουμπιά, φόρμες κλπ αν χρειαστεί */
 input[type="text"],
 select {
   padding: 0.55rem 0.7rem;
@@ -88,7 +85,7 @@ select:focus {
   border-radius: 8px;
   padding: 1rem 1.3rem;
   margin-bottom: 1rem;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   border: 1px solid #e5e5e5;
 }
 

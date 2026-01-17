@@ -1,173 +1,227 @@
-import { useEffect, useState } from "react";
-import axios from "axios";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+import { fetchCourses, fetchCoursesMeta } from "../api/courses";
 
 function CoursesPage() {
   const [courses, setCourses] = useState([]);
+  const [pagination, setPagination] = useState({ page: 1, pageSize: 20, total: 0 });
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
 
+  // Meta για dropdowns
+  const [meta, setMeta] = useState({
+    languages: [],
+    levels: [],
+    sources: [],
+    categories: [],
+  });
+  const [metaLoading, setMetaLoading] = useState(true);
+
+  // Search + Filters
+  const [q, setQ] = useState("");
   const [language, setLanguage] = useState("");
   const [level, setLevel] = useState("");
   const [source, setSource] = useState("");
   const [category, setCategory] = useState("");
 
-  //νέα δεδομένα
+  // Pagination (προαιρετικό αλλά σωστό)
+  const [page, setPage] = useState(1);
+
+  // 1) Load meta once
   useEffect(() => {
-    const fetchCourses = async () => {
+    let cancelled = false;
+
+    async function loadMeta() {
+      setMetaLoading(true);
+      try {
+        const m = await fetchCoursesMeta();
+        if (!cancelled) setMeta(m);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        if (!cancelled) setMetaLoading(false);
+      }
+    }
+
+    loadMeta();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Build query params
+  const params = useMemo(() => {
+    const p = { page, limit: 20 };
+
+    if (q.trim()) p.q = q.trim();
+    if (language) p.language = language;
+    if (level) p.level = level;
+    if (source) p.source = source;
+    if (category) p.category = category;
+
+    return p;
+  }, [q, language, level, source, category, page]);
+
+  // 2) Load courses when params change
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadCourses() {
       setLoading(true);
       setError("");
 
       try {
-        const params = {};
+        const result = await fetchCourses(params);
+        if (cancelled) return;
 
-        if (search.trim()) {
-          params.search = search.trim();
-        }
-
-        if (language) {
-            params.language = language;
-        }
-
-        if (level) {
-            params.level = level;
-        }
-
-        if (source) {
-            params.source = source;
-        }
-
-        if (category) {
-            params.category = category;
-        }
-        //φέρε δεδομένα για το συγεκριμένο id μέσω get request
-        const response = await axios.get(`${API_BASE_URL}/courses`, {
-          params,
-        });
-        //φορρτώνει τα δεδομένα που ήρθαν
-        setCourses(response.data || []);
-      } catch (err) {
-        console.error(err);
-        setError("Failed to load courses. Please try again.");
+        setCourses(result.data ?? []);
+        setPagination(result.pagination ?? { page: 1, pageSize: 20, total: 0 });
+      } catch (e) {
+        console.error(e);
+        if (!cancelled) setError("Failed to load courses. Please try again.");
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
-    };
+    }
 
-    fetchCourses();
-  }, [search, language, level, source, category]); //για να δουλεύει η αναζήτηση 
+    loadCourses();
+    return () => {
+      cancelled = true;
+    };
+  }, [params]);
+
+  const totalPages = Math.max(1, Math.ceil((pagination.total ?? 0) / (pagination.pageSize ?? 20)));
+
+  function clearAll() {
+    setQ("");
+    setLanguage("");
+    setLevel("");
+    setSource("");
+    setCategory("");
+    setPage(1);
+  }
+
+  // Όταν αλλάζει φίλτρο -> πήγαινε page 1
+  function setFilter(setter) {
+    return (value) => {
+      setter(value);
+      setPage(1);
+    };
+  }
 
   return (
     <div>
-      <h2>Courses</h2>  
+      <h2>Courses</h2>
 
+      {/* Search */}
       <div style={{ marginBottom: "1rem" }}>
         <input
           type="text"
-          placeholder="Search by title or keyword..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          style={{ padding: "0.5rem", width: "100%", maxWidth: "400px" }}
+          placeholder="Search by title / description / keywords..."
+          value={q}
+          onChange={(e) => setFilter(setQ)(e.target.value)}
+          style={{ padding: "0.5rem", width: "100%", maxWidth: "420px" }}
         />
       </div>
-   
-    <div
-      style={{
-        display: "flex",
-        flexWrap: "wrap",
-        gap: "0.75rem",
-        marginBottom: "1.5rem",
-      }}
-    >
-<div className="filters-container">
-     {/* Γλώσσα */}
-      <select
-        value={language}
-        onChange={(e) => setLanguage(e.target.value)}
-        style={{ padding: "0.5rem" }}
-      >
-        <option value="">All languages</option>
-        <option value="en">English</option>
-        <option value="el">Greek</option>
-      </select>
 
-      {/* Επίπεδο */}
-      <select
-        value={level}
-        onChange={(e) => setLevel(e.target.value)}
-        style={{ padding: "0.5rem" }}
-      >
-        <option value="">All levels</option>
-        <option value="beginner">Beginner</option>
-        <option value="intermediate">Intermediate</option>
-        <option value="advanced">Advanced</option>
-      </select>
+      {/* Filters */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", marginBottom: "1rem" }}>
+        <select value={language} onChange={(e) => setFilter(setLanguage)(e.target.value)} style={{ padding: "0.5rem" }}>
+          <option value="">All languages</option>
+          {meta.languages.map((l) => (
+            <option key={l} value={l}>
+              {l}
+            </option>
+          ))}
+        </select>
 
-      {/* Πηγή */}
-      <select
-        value={source}
-        onChange={(e) => setSource(e.target.value)}
-        style={{ padding: "0.5rem" }}
-      >
-        <option value="">All repositories</option>
-        <option value="kaggle">Kaggle</option>
-        <option value="coursera">Coursera</option>
-      </select>
+        <select value={level} onChange={(e) => setFilter(setLevel)(e.target.value)} style={{ padding: "0.5rem" }}>
+          <option value="">All levels</option>
+          {meta.levels.map((lv) => (
+            <option key={lv} value={lv}>
+              {lv}
+            </option>
+          ))}
+        </select>
 
-      {/* Λέξεις-κελιδιά */}
-      <input
-        type="text"
-        placeholder="Category / subject..." 
-        value={category}
-        onChange={(e) => setCategory(e.target.value)}
-        style={{ padding: "0.55rem 0.7rem", minWidth: "180px" }}
-      />
-    </div>
+        <select value={source} onChange={(e) => setFilter(setSource)(e.target.value)} style={{ padding: "0.5rem" }}>
+          <option value="">All repositories</option>
+          {meta.sources.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
 
-</div>
+        {/* Category (keywords) */}
+        <select
+          value={category}
+          onChange={(e) => setFilter(setCategory)(e.target.value)}
+          style={{ padding: "0.5rem", minWidth: 220 }}
+          disabled={metaLoading}
+        >
+          <option value="">All categories</option>
+          {meta.categories.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
 
+        <button onClick={clearAll} style={{ padding: "0.5rem 0.75rem" }}>
+          Clear
+        </button>
+      </div>
+
+      {/* Status */}
       {loading && <p>Loading courses...</p>}
       {error && <p style={{ color: "red" }}>{error}</p>}
+      {!loading && !error && courses.length === 0 && <p>No courses found.</p>}
 
-      {!loading && !error && courses.length === 0 && (
-        <p>No courses found. Try a different search.</p>
-      )}
-
+      {/* List */}
       {!loading && !error && courses.length > 0 && (
-        <ul style={{ listStyle: "none", padding: 0 }}>
-          {courses.map((course) => (
-            <li
-              key={course._id || course.id} className="course-card"
-              style={{
-                border: "1px solid #ddd",
-                borderRadius: "8px",
-                padding: "1rem",
-                marginBottom: "0.75rem",
-                background: "#fff",
-              }}
-            >
-              <h3>{course.title}</h3>
+        <>
+          <ul style={{ listStyle: "none", padding: 0 }}>
+            {courses.map((course) => (
+              <li
+                key={course.id}
+                style={{
+                  border: "1px solid #ddd",
+                  borderRadius: "8px",
+                  padding: "1rem",
+                  marginBottom: "0.75rem",
+                  background: "#fff",
+                }}
+              >
+                <h3 style={{ marginTop: 0 }}>{course.title}</h3>
 
-              {course.description && (
-                <p style={{ marginBottom: "0.5rem" }}>{course.description}</p>
-              )}
+                {course.shortDescription && <p style={{ marginBottom: "0.5rem" }}>{course.shortDescription}</p>}
 
-               <p style={{ fontSize: "0.9rem", marginBottom: "0.5rem" }}>
-                  <strong>Language:</strong> {course.language || "N/A"}{" "}
-      |           <strong>Level:</strong> {course.level || "N/A"}{" "}
-      |           <strong>Source:</strong>{" "}
-                 {course.source?.name || course.source || "Unknown"}
-               </p>
+                <p style={{ fontSize: "0.9rem", marginBottom: "0.5rem" }}>
+                  <strong>Language:</strong> {course.language} {" | "}
+                  <strong>Level:</strong> {course.level} {" | "}
+                  <strong>Source:</strong> {course.source?.name ?? "unknown"}
+                </p>
 
-              <Link to={`/courses/${course._id || course.id}`}>
-                View details
-              </Link>
-            </li>
-          ))}
-        </ul>
+                <Link to={`/courses/${course.id}`}>View details</Link>
+              </li>
+            ))}
+          </ul>
+
+          {/* Pagination */}
+          <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
+            <button disabled={page <= 1} onClick={() => setPage(page - 1)}>
+              Prev
+            </button>
+            <span>
+              Page {page} / {totalPages} (total: {pagination.total})
+            </span>
+            <button disabled={page >= totalPages} onClick={() => setPage(page + 1)}>
+              Next
+            </button>
+          </div>
+        </>
       )}
     </div>
   );

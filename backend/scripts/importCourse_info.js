@@ -110,7 +110,8 @@ const ENCODING = "utf8";
           processed++;
 
           const title = toStringOrUnknown(row.title, "Untitled course");
-          const shortDescription = toStringOrEmpty(row.headline) || "No description";
+          const shortDescription = toStringOrEmpty(row.desc) || toStringOrEmpty(row.headline) ||  "No description";
+
           const accessLink = normalizeUdemyUrl(row.course_url);
 
           if (!accessLink) {
