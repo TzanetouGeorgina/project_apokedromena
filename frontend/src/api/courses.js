@@ -24,3 +24,9 @@ export async function fetchCoursesMeta() {
   const res = await http.get("/courses/meta");
   return res.data; // { languages, levels, sources, categories }
 }
+
+// GET /courses/stats
+export async function fetchCourseStats() {
+  const res = await http.get("/courses/stats");
+  return res.data; // { total, bySource, byLanguage, byLevel, topKeywords }
+}

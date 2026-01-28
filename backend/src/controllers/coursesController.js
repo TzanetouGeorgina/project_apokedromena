@@ -187,3 +187,44 @@ export async function createCourse(req, res) {
     res.status(400).json({ error: err.message });
   }
 }
+
+// ✅ NEW: GET /courses/stats  (basic analytics)
+export async function getCourseStats(req, res) {
+  try {
+    const total = await Course.countDocuments({});
+
+    const bySource = await Course.aggregate([
+      { $group: { _id: "$source.name", count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+    ]);
+
+    const byLanguage = await Course.aggregate([
+      { $group: { _id: "$language", count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+    ]);
+
+    const byLevel = await Course.aggregate([
+      { $group: { _id: "$level", count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+    ]);
+
+    // Στο project σου “category” είναι ουσιαστικά keywords[]
+    // => βγάζουμε top keywords
+    const topKeywords = await Course.aggregate([
+      { $unwind: "$keywords" },
+      {
+        $match: {
+          keywords: { $nin: [null, "", "unknown", "Unknown"] },
+        },
+      },
+      { $group: { _id: "$keywords", count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 20 },
+    ]);
+
+    res.json({ total, bySource, byLanguage, byLevel, topKeywords });
+  } catch (err) {
+    console.error("getCourseStats error:", err);
+    res.status(500).json({ error: "Failed to load stats" });
+  }
+}

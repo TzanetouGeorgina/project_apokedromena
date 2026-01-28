@@ -5,16 +5,16 @@ import {
   createCourse,
   getCoursesMeta,
   getSimilarCourses,
+  getCourseStats,
 } from "../controllers/coursesController.js";
 
 const router = Router();
 
 router.get("/", getCourses);
 router.get("/meta", getCoursesMeta);
+router.get("/stats", getCourseStats);
 
-// ΠΡΕΠΕΙ να είναι εδώ
 router.get("/:id/similar", getSimilarCourses);
-
 router.get("/:id", getCourseById);
 router.post("/", createCourse);
 
