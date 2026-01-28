@@ -1,3 +1,8 @@
+/**
+ Σελίδα λεπτομερειών μαθήματος.
+  Φορτώνει course info
+  Φορτώνει Spark recommendations 
+ */
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { fetchCourseById, fetchSimilarCourses } from "../api/courses";
@@ -37,7 +42,7 @@ function CourseDetailsPage() {
     };
   }, [id]);
 
-  // ✅ fetch similars
+  // fetch similars
   useEffect(() => {
     let cancelled = false;
 
@@ -113,7 +118,7 @@ function CourseDetailsPage() {
         </p>
       )}
 
-      {/* ✅ Similar courses section */}
+      {/* Similar courses */}
       <hr />
       <h3>Similar courses</h3>
 

@@ -1,3 +1,8 @@
+/**
+  Αυτό το collection το γεμίζει το Spark job.
+  Για κάθε courseId  similar_ids: λίστα από ObjectId strings που είναι similar
+                     scores: αντίστοιχες ομοιότητες (π.χ. cosine similarity)
+ */
 import mongoose from "mongoose";
 
 const CourseSimilaritySchema = new mongoose.Schema(
@@ -6,7 +11,7 @@ const CourseSimilaritySchema = new mongoose.Schema(
     similar_ids: { type: [String], default: [] },
     scores: { type: [Number], default: [] },
   },
-  { collection: "course_similarity" } // IMPORTANT: ίδιο όνομα με αυτό που γράφει το Spark
+  { collection: "course_similarity" } 
 );
 
 CourseSimilaritySchema.index({ courseId: 1 }, { unique: true });

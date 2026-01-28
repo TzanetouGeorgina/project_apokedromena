@@ -3,6 +3,8 @@ import mongoose from "mongoose";
 
 const { Schema } = mongoose;
 
+//Helper σχημα για  required string, trim καιγια  default "unknown"
+
 const REQUIRED_TEXT = {
   type: String,
   required: true,
@@ -10,6 +12,7 @@ const REQUIRED_TEXT = {
   default: "unknown",
 };
 
+// Το εννιαίο μας σχήμα
 const CourseSchema = new Schema(
   {
     title: REQUIRED_TEXT,
@@ -42,7 +45,7 @@ CourseSchema.index({
   keywords: "text",
 });
 
-// Dedup per source
+// Το ίδιο μάθημα (ίδιο accessLink) να μην γράφεται 2 φορές από την ίδια πηγη
 CourseSchema.index({ "source.name": 1, accessLink: 1 }, { unique: true });
 
 // Performance indexes για φίλτρα/sort

@@ -1,3 +1,7 @@
+/**
+ Ορίζει το layout 
+ Ορίζει τα routes της εφαρμογής
+ */
 import { BrowserRouter as Router, Routes, Route, Link } from "react-router-dom";
 import CoursesPage from "./pages/CoursesPage";
 import CourseDetailsPage from "./pages/CourseDetailsPage";

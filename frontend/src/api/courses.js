@@ -1,3 +1,7 @@
+/**
+ * Fetch list of courses
+ * Υποστηρίζει search, filters και pagination μέσω query params
+ */
 import { http } from "./http";
 
 // GET /courses (search + filters + pagination)

@@ -10,6 +10,7 @@ function toUnknown(value) {
 }
 
 // Μορφοποίηση course πριν το στείλουμε στο frontend
+// Και μετατροπή ενός Course  σε object που επιστρέφει το API
 function formatCourse(courseDoc) {
   const course = courseDoc.toObject ? courseDoc.toObject() : courseDoc;
 
@@ -42,18 +43,21 @@ export async function getCourses(req, res) {
       limit = 20,
     } = req.query;
 
+    // Φτιάχνουμε δυναμικά filter object
     const filters = {};
 
     if (language) filters.language = language;
     if (level) filters.level = level;
     if (source) filters["source.name"] = source;
 
-    // keywords[] => match any element
+    // keywords[] για να κανουν match σε οποιοδήποτε element
     if (category) filters.keywords = category;
 
     let query;
     let countFilter;
 
+    // Όταν χρησιμοποιούμε $text search ζητάμε το textScore από τη Mongo
+    // και ταξινομούμε τα αποτελέσματα με βάση τη σχετικότητα 
     if (q) {
       const textCriteria = { $text: { $search: q }, ...filters };
 
@@ -67,6 +71,7 @@ export async function getCourses(req, res) {
       countFilter = filters;
     }
 
+    // Pagination: μετατρέπουμε σε αριθμούς με defaults
     const pageNumber = Number(page) || 1;
     const pageSize = Number(limit) || 20;
     const skip = (pageNumber - 1) * pageSize;
@@ -108,7 +113,7 @@ export async function getCourseById(req, res) {
   }
 }
 
-// ✅ NEW: GET /courses/:id/similar
+// GET /courses/:id/similar
 export async function getSimilarCourses(req, res) {
   try {
     const { id } = req.params;
@@ -134,15 +139,14 @@ export async function getSimilarCourses(req, res) {
     // Φέρνουμε τα courses
     const courses = await Course.find({ _id: { $in: ids } });
 
-    // Κρατάμε τη σειρά που έδωσε ο Spark
+    // Κρατάμε τη σειρά που έδωσε το Spark
     const byId = new Map(courses.map((c) => [String(c._id), c]));
     const ordered = ids.map((cid) => byId.get(String(cid))).filter(Boolean);
 
     res.json({
       data: ordered.map(formatCourse),
       pagination: { page: 1, pageSize: ordered.length, total: ordered.length },
-      // Αν το θες, μπορείς να το ανοίξεις και αυτό:
-      // scores: (sim.scores ?? []).slice(0, limit),
+
     });
   } catch (err) {
     console.error("getSimilarCourses error:", err);
@@ -150,14 +154,14 @@ export async function getSimilarCourses(req, res) {
   }
 }
 
-// ✅ NEW: GET /courses/meta  (dynamic filter values)
+// GET /courses/meta  για δυναμικά φίλτρα
 export async function getCoursesMeta(req, res) {
   try {
     const [languages, levels, sources, categories] = await Promise.all([
       Course.distinct("language"),
       Course.distinct("level"),
       Course.distinct("source.name"),
-      Course.distinct("keywords"), // distinct πάνω σε array => φέρνει τα elements
+      Course.distinct("keywords"), // distinct πάνω σε array και φέρνει τα elements
     ]);
 
     const clean = (arr) =>
@@ -188,7 +192,7 @@ export async function createCourse(req, res) {
   }
 }
 
-// ✅ NEW: GET /courses/stats  (basic analytics)
+// GET /courses/stats  για analytics
 export async function getCourseStats(req, res) {
   try {
     const total = await Course.countDocuments({});
@@ -208,8 +212,7 @@ export async function getCourseStats(req, res) {
       { $sort: { count: -1 } },
     ]);
 
-    // Στο project σου “category” είναι ουσιαστικά keywords[]
-    // => βγάζουμε top keywords
+    //  βγάζουμε top keywords
     const topKeywords = await Course.aggregate([
       { $unwind: "$keywords" },
       {

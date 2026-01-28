@@ -12,14 +12,20 @@ import Course from "../src/models/Course.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Καθαρίζει input strings
+
 function cleanStr(v) {
   if (v === undefined || v === null) return "";
   return String(v).replace(/\uFEFF/g, "").trim().replace(/^"+|"+$/g, "");
 }
+
+// Επιστρέφει string ή fallback ("unknown")
 function toStringOrUnknown(v, fallback = "unknown") {
   const s = cleanStr(v);
   return s ? s : fallback;
 }
+
+// Επιστρέφει string ή "" 
 function toStringOrEmpty(v) {
   return cleanStr(v) || "";
 }
@@ -34,6 +40,7 @@ function normalizeUdemyUrl(v) {
   if (!s0) return "";
   let s = s0;
 
+  // Αν δεν έχει http(s), προσπαθούμε να το φτιάξουμε
   if (!s.startsWith("http://") && !s.startsWith("https://")) {
     if (s.startsWith("/")) s = `https://www.udemy.com${s}`;
     else if (s.startsWith("www.")) s = `https://${s}`;
@@ -42,7 +49,7 @@ function normalizeUdemyUrl(v) {
   // drop query string
   s = s.split("#")[0].split("?")[0];
 
-  // remove slash
+  // βγαζω slash
   if (s.endsWith("/")) s = s.slice(0, -1);
 
   return s;
@@ -70,6 +77,12 @@ function buildKeywords(row) {
   return [...new Set(arr)];
 }
 
+
+/**
+  συνδέεται στη DB
+ διαβάζει CSV σαν stream (για μεγάλα αρχεία)
+  κάνει batch bulkWrite με upsert
+ */
 async function importUdemy() {
   await connectDB();
 
@@ -139,6 +152,10 @@ const ENCODING = "utf8";
             externalId,
           };
 
+
+          // filter: source και accessLink 
+          // $set: ενημερώνει τα fields
+          //upsert: αν δεν υπάρχει, το δημιουργεί
           ops.push({
             updateOne: {
               filter: { "source.name": SOURCE_NAME, accessLink },
@@ -155,6 +172,7 @@ const ENCODING = "utf8";
 
           stream.resume();
         } catch (e) {
+          // Αν κάτι πάει στραβά σε μία γραμμή δεν πετάμε ολο το import
           skipped++;
           stream.resume();
         }

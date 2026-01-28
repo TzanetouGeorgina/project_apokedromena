@@ -11,6 +11,9 @@ import Course from "../src/models/Course.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// μονο γνωστές γλώσσες και levels kai άγνωστα μπαίνουν unknown
+
+ 
 const LANGUAGE_WHITELIST = new Set([
   "English","Spanish","French","German","Italian","Portuguese","Portuguese (Brazilian)",
   "Chinese","Japanese","Korean","Arabic","Russian","Hindi","Turkish","Dutch","Ukrainian",
@@ -21,6 +24,10 @@ const LEVEL_WHITELIST = new Set([
   "Beginner Level","Intermediate Level","Advanced Level","Mixed","All Levels",
 ]);
 
+
+//χειρίζεται quoted fields
+// χειρίζεται ""
+//  χωρίζει με κόμμα μονο όταν δεν είσαι μέσα σε quotes
 function parseCsvLine(line) {
   const out = [];
   let cur = "";
@@ -44,10 +51,12 @@ function parseCsvLine(line) {
   return out;
 }
 
+//Κάποια lines ξεκινάνε με εξτρα quote που χαλάειτο parsing και προσπαθούμε να το φτιαξουμε
 function fixMalformedLeadingQuote(line) {
   if (!line.startsWith('"')) return line;
   const firstComma = line.indexOf(",");
   const nextQuote = line.indexOf('"', 1);
+   // Αν το πρώτο κόμμα  πριν κλείσει το quote μπορεί να εχει stray quote στην αρχή
   if (firstComma !== -1 && nextQuote !== -1 && firstComma < nextQuote) return line.slice(1);
   return line;
 }
@@ -123,6 +132,7 @@ async function importCoursera() {
     const fixed = fixMalformedLeadingQuote(normalized);
     const fields = parseCsvLine(fixed);
 
+     // Αν είναι πολύ λίγα fields κανει skip 
     if (fields.length < 12) {
       skipped++;
       continue;
@@ -134,6 +144,7 @@ async function importCoursera() {
       continue;
     }
 
+    // Βασικά πεδία
     const title = cleanText(fields[1], "Untitled course");
     const org = cleanText(fields[2], "");
     const category = cleanText(fields[5], "");
@@ -142,6 +153,7 @@ async function importCoursera() {
     let language = normalizeLanguageStrict(fields[9]);
     let level = normalizeLevelStrict(fields[10]);
 
+     // Αν βγήκαν unknown ψάχνουμε κοντά
     if (language === "unknown") language = findInWindow(fields, 8, 12, LANGUAGE_WHITELIST);
     if (level === "unknown") level = findInWindow(fields, 8, 14, LEVEL_WHITELIST);
 
@@ -160,6 +172,7 @@ async function importCoursera() {
       externalId: url,
     };
 
+    // upsert
     ops.push({
       updateOne: {
         filter: { "source.name": SOURCE_NAME, accessLink: url },

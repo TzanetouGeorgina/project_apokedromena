@@ -1,3 +1,8 @@
+/**
+  Σελίδα λίστας μαθημάτων.
+  Διαχειρίζεται search, filters και pagination
+  Καλεί το backend endpoint GET /courses
+ */
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { fetchCourses, fetchCoursesMeta } from "../api/courses";
@@ -18,17 +23,17 @@ function CoursesPage() {
   });
   const [metaLoading, setMetaLoading] = useState(true);
 
-  // Search + Filters
+  // Search και Filters
   const [q, setQ] = useState("");
   const [language, setLanguage] = useState("");
   const [level, setLevel] = useState("");
   const [source, setSource] = useState("");
   const [category, setCategory] = useState("");
 
-  // Pagination (προαιρετικό αλλά σωστό)
+  // Pagination 
   const [page, setPage] = useState(1);
 
-  // 1) Load meta once
+  // Load meta once
   useEffect(() => {
     let cancelled = false;
 
@@ -63,7 +68,7 @@ function CoursesPage() {
     return p;
   }, [q, language, level, source, category, page]);
 
-  // 2) Load courses when params change
+  // Load courses when params change
   useEffect(() => {
     let cancelled = false;
 
@@ -102,7 +107,7 @@ function CoursesPage() {
     setPage(1);
   }
 
-  // Όταν αλλάζει φίλτρο -> πήγαινε page 1
+  // Όταν αλλάζει φίλτρο πήγαινε page 1
   function setFilter(setter) {
     return (value) => {
       setter(value);

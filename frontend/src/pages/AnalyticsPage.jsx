@@ -1,3 +1,4 @@
+//Σελίδα για analytics
 import { useEffect, useMemo, useState } from "react";
 import { fetchCourseStats } from "../api/courses";
 
@@ -70,8 +71,7 @@ export default function AnalyticsPage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
 
-  // Προαιρετικό: φιλτράρουμε "unknown" μόνο για level στο UI,
-  // ώστε να μην φαίνεται άδειο/άδικο στην παρουσίαση.
+  // φιλτράρουμε "unknown" μόνο για level στο UI gia να μην φαίνεται άδειο
   const filteredLevel = useMemo(() => {
     if (!data?.byLevel) return [];
     return data.byLevel.filter(
@@ -103,7 +103,7 @@ export default function AnalyticsPage() {
         <strong>Total courses:</strong> {data.total}
       </p>
 
-      {/* Source counts: συνήθως λίγα, οπότε δεν χρειάζεται toggle */}
+      {/* Source counts: λίγα*/}
       <ListSection
         title="Courses by source"
         rows={data.bySource}
@@ -111,7 +111,7 @@ export default function AnalyticsPage() {
         showToggle={false}
       />
 
-      {/* Languages: έχει πολλά, εδώ το toggle είναι χρήσιμο */}
+      {/* Languages: έχει πολλά για αυτό toggle */}
       <ListSection
         title="Courses by language"
         rows={data.byLanguage}
@@ -128,7 +128,7 @@ export default function AnalyticsPage() {
         emptyText="No level info available in the dataset."
       />
 
-      {/* Keywords: έχει αρκετά, toggle χρήσιμο */}
+      {/* Keywords: έχει αρκετά ενεργό toggle*/}
       <ListSection
         title="Top keywords (categories)"
         rows={data.topKeywords}

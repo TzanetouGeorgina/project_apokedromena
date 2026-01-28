@@ -1,3 +1,8 @@
+/**
+  Δημιουργεί το React root
+  Τυλίγει όλη την εφαρμογή με BrowserRouter
+  ώστε να υποστηρίζονται routes (/courses, /analytics κλπ)
+ */
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";

@@ -33,6 +33,11 @@ const TEST_COURSE = {
 
 let createdId; // ObjectId string
 
+/**
+ συνδέεται στη Mongo 
+ καθαρίζει παλιά test δεδομένα
+ εισάγει 1 course και κρατάει το _id
+ */
 test.before(async () => {
   const uri = process.env.MONGO_URI;
   assert.ok(
@@ -49,6 +54,8 @@ test.before(async () => {
   createdId = String(doc._id);
 });
 
+// καθαρίζει τα test δεδομένα
+//κλείνει DB connection
 test.after(async () => {
   try {
     await Course.deleteMany({ "source.name": "Test Source" });
@@ -57,32 +64,30 @@ test.after(async () => {
   }
 });
 
-// ✅ TEST 1: GET /courses returns list + pagination OR list shape
+// GET /courses επιστρέφει list kai pagination OR list shape
 test("GET /courses returns list of courses", async () => {
   const res = await request(app).get("/courses");
 
   assert.equal(res.statusCode, 200);
   assert.ok(res.body, "Missing response body");
 
-  // Στο δικό σου API συνήθως είναι { data: [...], pagination: {...} }
-  // αλλά αν είναι { courses: [...] } το υποστηρίζουμε επίσης.
   const list = res.body.data ?? res.body.courses;
   assert.ok(Array.isArray(list), "Expected response list to be an array");
 
-  // Αν υπάρχει pagination, κάνε βασικό έλεγχο
+  // Αν υπάρχει pagination κάνει βασικό έλεγχο
   if (res.body.pagination) {
     assert.equal(typeof res.body.pagination.total, "number");
   }
 });
 
-// ✅ TEST 2: GET /courses/:id returns a course
+//  GET /courses/:id επιστρέφει course
 test("GET /courses/:id returns a course", async () => {
   const res = await request(app).get(`/courses/${createdId}`);
 
   assert.equal(res.statusCode, 200);
   assert.ok(res.body, "Missing response body");
 
-  // Μερικές υλοποιήσεις επιστρέφουν id, άλλες _id
+  // Μερικές υλοποιήσεις επιστρέφουν id και άλλες _id
   const returnedId = res.body.id ?? res.body._id;
   assert.ok(returnedId, "Expected body.id or body._id");
   assert.equal(String(returnedId), createdId);
@@ -91,7 +96,7 @@ test("GET /courses/:id returns a course", async () => {
   assert.equal(res.body.language, "English");
 });
 
-// ✅ TEST 3: GET /courses supports search + filters
+// GET /courses υποστηρίζει search και filters
 test("GET /courses supports q + language filters", async () => {
   const res = await request(app)
     .get("/courses")
@@ -108,7 +113,7 @@ test("GET /courses supports q + language filters", async () => {
   assert.equal(found, true, "Expected to find inserted test course in results");
 });
 
-// ✅ TEST 4: GET /courses/stats returns analytics (requires your endpoint)
+// GET /courses/stats επιστρέφει analytics 
 test("GET /courses/stats returns analytics fields", async () => {
   const res = await request(app).get("/courses/stats");
 

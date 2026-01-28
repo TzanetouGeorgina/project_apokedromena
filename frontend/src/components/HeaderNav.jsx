@@ -1,4 +1,9 @@
 // src/components/HeaderNav.jsx
+/**
+  Header navigation 
+  Παρέχει links προς βασικές σελίδες
+  NavLink χρησιμοποιείται για active styling
+ */
 import { useNavigate } from "react-router-dom";
 
 export default function HeaderNav() {
