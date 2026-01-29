@@ -1,10 +1,14 @@
+"""""
+Eδώ τεσταρουμε ότι το Spark μπορεί
+   να διαβάζει από MongoDB μέσω Mongo Spark Connector
+ και να γράφει πίσω σε MongoDB/
+"""""
+
 import os
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
-# =========================
 # Mongo configuration
-# =========================
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://mongo:27017")
 DB_NAME = "courses_db"
 COURSES_COLLECTION = "courses"
@@ -14,9 +18,7 @@ print("Starting Spark job...")
 print("Mongo URI:", MONGO_URI)
 print("Database:", DB_NAME)
 
-# =========================
 # Spark session
-# =========================
 spark = (
     SparkSession.builder
     .appName("spark-mongo-connection-test")
@@ -27,9 +29,7 @@ spark = (
     .getOrCreate()
 )
 
-# =========================
 # READ TEST
-# =========================
 print("Reading courses from MongoDB...")
 
 courses_df = (
@@ -48,9 +48,7 @@ courses_df.select(
     F.col("source.name").alias("source")
 ).show(5, truncate=True)
 
-# =========================
 # WRITE TEST
-# =========================
 print("Writing test document to MongoDB...")
 
 test_df = (
@@ -68,8 +66,7 @@ test_df = (
 
 print(f"WRITE OK - Document written to {DB_NAME}.{TEST_COLLECTION}")
 
-# =========================
 # Finish
-# =========================
+
 spark.stop()
 print("Spark job finished successfully.")

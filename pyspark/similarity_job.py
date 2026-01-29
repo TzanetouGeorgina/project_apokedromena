@@ -18,7 +18,9 @@ from pyspark.ml.feature import (
 )
 from pyspark.ml.feature import BucketedRandomProjectionLSH
 
-
+# Spark session kai Mongo connector
+# Δηλώνουμε read/write URIs ώστε ο Spark να μπορεί να διαβάζει/γράφει απευθείας στη MongoDB
+# Αυτό επιτρέπει offline ML job που αποθηκεύει αποτελέσματα στη βάση (course_similarity)
 def build_spark(app_name: str, mongo_uri: str):
     from pyspark.sql import SparkSession
 
@@ -36,11 +38,12 @@ def build_spark(app_name: str, mongo_uri: str):
     spark.sparkContext.setLogLevel("WARN")
     return spark
 
+# Cosine similarity UDF.
+# Επειδή τα feature vectors έχουν L2 normalization cosine(a,b) = dot(a,b)
 @F.udf(DoubleType())
 def cos_udf(a: Vector, b: Vector) -> float:
     if a is None or b is None:
         return None
-    # vectors are L2-normalized => cosine similarity = dot product
     return float(a.dot(b))
 
 
@@ -63,7 +66,7 @@ def main():
     p.add_argument("--bucket-length", type=float, default=3.0)
     p.add_argument("--num-hash-tables", type=int, default=2)
 
-    # Blocking / safety knobs (THIS is what makes it run on 210k)
+    # Blocking / safety knobs 
     p.add_argument("--bucket-cap", type=int, default=200,
                    help="Max courses kept per (language,bucket). Controls pair explosion.")
     p.add_argument("--min-cos", type=float, default=0.25,
@@ -77,7 +80,7 @@ def main():
     args = p.parse_args()
     spark = build_spark("course-similarity-job", args.mongo_uri)
 
-    # 1) Read courses
+    # Διαβαζει courses και δημιουργούμε course_id ως string
     courses = (
         spark.read.format("mongodb")
         .option("database", args.db)
@@ -90,7 +93,7 @@ def main():
 
     df = courses.withColumn("course_id", F.col(args.id_col).cast("string"))
 
-    # 2) text = shortDescription + keywords
+    # text = shortDescription + keywords
     if "shortDescription" in df.columns:
         df = df.withColumn("short_desc", F.coalesce(F.col("shortDescription").cast("string"), F.lit("")))
     else:
@@ -111,7 +114,10 @@ def main():
     df = df.withColumn("text", F.trim(F.concat_ws(" ", F.col("short_desc"), F.col("kw_text"))))
     df = df.withColumn("text", F.regexp_replace(F.col("text"), r"\s+", " "))
 
-    # language required
+    # Data cleaning
+    #  απαιτούμε language για να συγκρίνουμε courses στην ίδια γλώσσα
+    #  κρατάμε μόνο courses με αρκετό κείμενο (min_text_len)
+    # αφαιρούμε duplicates
     if "language" not in df.columns:
         df = df.withColumn("language", F.lit(None).cast("string"))
     else:
@@ -126,14 +132,16 @@ def main():
     if args.limit and args.limit > 0:
         df = df.orderBy(F.rand(seed=42)).limit(args.limit)
 
-    print("✅ Sample input rows:")
+    print("Sample input rows:")
     df.show(5, truncate=90)
 
-    # 3) TF-IDF pipeline
+    # TF-IDF pipeline
+    # NLP vectorization
+    # Tokenize → remove stopwords → TF-IDF → L2 normalization
+    # Φιλτράρουμε courses με <5 tokens για να αποφύγουμε θόρυβο
     tokenizer = RegexTokenizer(inputCol="text", outputCol="tokens", pattern=r"\W+", minTokenLength=2)
 
-    # NOTE: default StopWordsRemover is EN-only. Keeping it still helps for EN,
-    # but doesn't harm other languages too much. If you prefer, remove this stage.
+   # αφαιρεί κοινές λέξεις (κυρίως για EN βοηθά)
     remover = StopWordsRemover(inputCol="tokens", outputCol="filtered")
 
     hashing_tf = HashingTF(inputCol="filtered", outputCol="tf", numFeatures=args.num_features)
@@ -151,7 +159,10 @@ def main():
 
     featurized = featurized.repartition(64, "language")
 
-    # 4) LSH hashing
+    # LSH hashing
+    # δημιουργεί hashes/buckets για approximate neighbor search
+    # Persist γιατί θα το ξαναχρησιμοποιήσουμε σε multiple downstream transformations
+
     lsh = BucketedRandomProjectionLSH(
         inputCol="features",
         outputCol="hashes",
@@ -163,8 +174,10 @@ def main():
     hashed = lsh_model.transform(featurized).select("course_id", "language", "features", "hashes") \
         .persist(StorageLevel.MEMORY_AND_DISK)
 
-    # 5) BLOCKING: explode hashes -> buckets, cap per (language,bucket)
-    # Each row in hashes is a DenseVector. We'll stringify it safely.
+    # Blocking
+    # explode hashes ώστε να πάρουμε explicit buckets
+    # cap ανά language, bucket για να αποφύγουμε pair explosion
+
     buckets = (
         hashed
         .withColumn("h", F.explode("hashes"))
@@ -181,7 +194,9 @@ def main():
         .persist(StorageLevel.DISK_ONLY)
     )
 
-    # 6) Candidate generation: join within (language,bucket) only, avoid duplicates early
+    # Candidate pairs
+    # Join μέσα στο ίδιο (language,bucket) 
+    # κρατάμε μόνο src<dst ώστε να αποφύγουμε διπλά ζευγάρια
     a = buckets_capped.alias("a")
     b = buckets_capped.alias("b")
 
@@ -197,22 +212,21 @@ def main():
             F.col("a.features").alias("fa"),
             F.col("b.features").alias("fb"),
         )
-        .filter(F.col("src") < F.col("dst"))   # keep one direction to cut pairs in half
+        .filter(F.col("src") < F.col("dst"))   
         .persist(StorageLevel.DISK_ONLY)
     )
-
-    # 7) Score with cosine similarity (vectors are L2-normalized => cosine = dot)
+    # Scoring
+    # Υπολογίζουμε cosine similarity μόνο στους candidates και κρατάμε όσους περνούν το min_cos.
     scored = (
     cand
     .withColumn("cos", cos_udf(F.col("fa"), F.col("fb")))
     .filter(F.col("cos") >= F.lit(args.min_cos))
     .select("src", "dst", "cos")
 )
-
-    # Because we used multiple buckets (multiple hash tables), same pair may appear multiple times:
+    # το ίδιο pair μπορεί να εμφανιστεί σε πολλαπλά buckets αρα κρατάμε το max score
     scored = scored.groupBy("src", "dst").agg(F.max("cos").alias("score"))
 
-    # Expand to both directions so every course can have recommendations
+    # κάνουμε expand σε 2 κατευθύνσεις ώστε κάθε course να έχει recommendations
     scored2 = (
         scored
         .select(F.col("src").alias("s"), F.col("dst").alias("d"), "score")
@@ -222,7 +236,7 @@ def main():
         .persist(StorageLevel.DISK_ONLY)
     )
 
-    # 8) Candidate cap per src (early safety)
+    # περιορίζουμε πόσους candidates κρατάμε ανά src πριν το τελικό top-K για σταθερή απόδοση
     w_cand = Window.partitionBy("src").orderBy(F.desc("score"), F.asc("dst"))
     scored2 = (
         scored2
@@ -231,7 +245,9 @@ def main():
         .drop("rn")
     )
 
-    # 9) Top-K per src
+   # Top-K aggregation:
+    # Για κάθε src course φτιάχνουμε arrays similar_ids και scores
+    #  ώστε να αποθηκευτούν εύκολα στη Mongo
     w_topk = Window.partitionBy("src").orderBy(F.desc("score"), F.asc("dst"))
     topk = (
         scored2
@@ -251,7 +267,7 @@ def main():
         .withColumnRenamed("src", "courseId")
     )
 
-    # Ensure every course appears
+    # καθε courseId εμφανίζεται στο output
     all_courses = hashed.select(F.col("course_id").alias("courseId")).distinct()
     result = (
         all_courses.join(result, on="courseId", how="left")
@@ -259,7 +275,7 @@ def main():
         .withColumn("scores", F.coalesce(F.col("scores"), F.array().cast("array<double>")))
     )
 
-    # 10) Write to Mongo
+    # Write to Mongo
     (
         result.write.format("mongodb")
         .mode("overwrite")
@@ -268,7 +284,7 @@ def main():
         .save()
     )
 
-    print(f"✅ Write completed to {args.db}.{args.out_collection}")
+    print(f"Write completed to {args.db}.{args.out_collection}")
     spark.stop()
 
 if __name__ == "__main__":
