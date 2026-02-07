@@ -15,7 +15,7 @@
 
 2. Προβολή αναλυτικών πληροφοριών για το καθένα
 
-3. Εμφάνιση παρόμοιων μαθημάτων (recommendations)
+3. Εμφάνιση παρόμοιων μαθημάτων (course similarity/recommendations)
 
 4. Βασικά Analytics
 
@@ -26,8 +26,11 @@ React Frontend: διεπαφή χρήστη
 Backend API: REST API/ πρόσβαση στα δεδομένα
 
 Import scripts: συλλογή από δεδομένα εξωτερικών πηγών(csv)
+
   Τα import γίνονται με τις εντολές:
+  
     docker compose run --rm backend node scripts/importCourse_info.js
+    
     docker compose run --rm backend node scripts/importCoursera.js
 
 
