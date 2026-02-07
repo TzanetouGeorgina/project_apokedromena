@@ -57,6 +57,7 @@ docker compose exec spark /opt/spark/bin/spark-submit \
   --bucket-cap 120 \
   --min-cos 0.30 \
   --candidate-cap 50
+  
   Η εκτέλεση γίνεται offline και τα αποτελέσματα χρησιμοποιούνται από το backend API και το frontend.
 
 
@@ -65,6 +66,7 @@ docker compose exec spark /opt/spark/bin/spark-submit \
 Υλοποιήθηκαν κάποια βασικά integration tests στο backend API για την επαλήθευση της σωστής λειτουργίας του συστήματος. Τα tests ελέγχουν την σωστή συνεργασία REST API και της βάσης δεδομένων MongoDB.
 
 Η εκτέλεσή τους γίνεται με 
+
   docker compose run --rm \
   -e MONGO_URI=mongodb://mongo:27017/courses_db_test \
   backend npm test
