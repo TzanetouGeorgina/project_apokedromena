@@ -38,6 +38,28 @@ MongoDB: αποθήκευση μαθημάτων και αποτελεσμάτω
 
 PySpark ML: υπολογισμός παρόμοιων μαθημάτων
 
+Ο υπολογισμός των similar courses γίνεται μέσω PySpark job, το οποίο εκτελείται μέσα στο Spark container και συνδέεται απευθείας με τη MongoDB
+
+docker compose exec spark /opt/spark/bin/spark-submit \
+  --master local[*] \
+  --conf spark.jars.ivy=/tmp/ivy2 \
+  --conf spark.sql.warehouse.dir=/tmp/spark-warehouse \
+  --packages org.mongodb.spark:mongo-spark-connector_2.12:10.5.0 \
+  /opt/spark-app/similarity_job.py \
+  --mongo-uri "mongodb://mongo:27017" \
+  --db "courses_db" \
+  --in-collection "courses" \
+  --out-collection "course_similarity" \
+  --k 5 \
+  --id-col "_id" \
+  --bucket-length 4.0 \
+  --num-hash-tables 1 \
+  --bucket-cap 120 \
+  --min-cos 0.30 \
+  --candidate-cap 50
+  Η εκτέλεση γίνεται offline και τα αποτελέσματα χρησιμοποιούνται από το backend API και το frontend.
+
+
 /// Tests
 
 Υλοποιήθηκαν κάποια βασικά integration tests στο backend API για την επαλήθευση της σωστής λειτουργίας του συστήματος. Τα tests ελέγχουν την σωστή συνεργασία REST API και της βάσης δεδομένων MongoDB.
