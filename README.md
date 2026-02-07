@@ -26,6 +26,10 @@ React Frontend: διεπαφή χρήστη
 Backend API: REST API/ πρόσβαση στα δεδομένα
 
 Import scripts: συλλογή από δεδομένα εξωτερικών πηγών(csv)
+  Τα import γίνονται με τις εντολές:
+    docker compose run --rm backend node scripts/importCourse_info.js
+    docker compose run --rm backend node scripts/importCoursera.js
+
 
 MongoDB: αποθήκευση μαθημάτων και αποτελεσμάτων similarity
 
@@ -36,8 +40,10 @@ PySpark ML: υπολογισμός παρόμοιων μαθημάτων
 Υλοποιήθηκαν κάποια βασικά integration tests στο backend API για την επαλήθευση της σωστής λειτουργίας του συστήματος. Τα tests ελέγχουν την σωστή συνεργασία REST API και της βάσης δεδομένων MongoDB.
 
 Η εκτέλεσή τους γίνεται με 
+  docker compose run --rm \
+  -e MONGO_URI=mongodb://mongo:27017/courses_db_test \
+  backend npm test
 
-npm test
 
 /// Εκτέλεση 
 
